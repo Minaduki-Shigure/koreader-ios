@@ -8,6 +8,7 @@ local PathChooser = require("ui/widget/pathchooser")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local ffiUtil = require("ffi/util")
+local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local lfs = require("libs/libkoreader-lfs")
 local util = require("util")
 local _ = require("gettext")
@@ -22,6 +23,7 @@ local BookShortcuts = WidgetContainer:extend{
 }
 
 local function dispatcherRegisterShortcut(name)
+    if not filemanagerutil.isPathInsideHome(name) then return end
     local mode = lfs.attributes(name, "mode")
     if mode then
         local title = T(C_("File", "Open %1"), mode == "file" and name:gsub(".*/", "") or name)
@@ -39,6 +41,7 @@ function BookShortcuts:onDispatcherRegisterActions()
 end
 
 function BookShortcuts:onBookShortcut(path)
+    if not filemanagerutil.isPathInsideHome(path) then return end
     local mode = lfs.attributes(path, "mode")
     if mode then
         local file
@@ -66,7 +69,6 @@ function BookShortcuts:onBookShortcut(path)
         end
         if file then
             if Device:canExecuteScript(file) then
-                local filemanagerutil = require("apps/filemanager/filemanagerutil")
                 filemanagerutil.executeScript(file)
             else
                 local FileManager = require("apps/filemanager/filemanager")
@@ -178,6 +180,7 @@ function BookShortcuts:getSubMenuItems()
     }
     for k in ffiUtil.orderedPairs(self.shortcuts) do
         if k == "settings" then goto continue end
+        if not filemanagerutil.isPathInsideHome(k) then goto continue end
         local mode = lfs.attributes(k, "mode")
         local icon = mode and (mode == "file" and "\u{F016} " or "\u{F114} ") or "\u{F48E} "
         local text = mode == "file" and k:gsub(".*/", "") or k
@@ -203,6 +206,7 @@ function BookShortcuts:getSubMenuItems()
 end
 
 function BookShortcuts:addShortcut(name)
+    if not filemanagerutil.isPathInsideHome(name) then return end
     self.shortcuts[name] = true
     dispatcherRegisterShortcut(name)
     self.updated = true

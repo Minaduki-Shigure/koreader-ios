@@ -1563,6 +1563,10 @@ function UIManager:onRotation()
 end
 
 function UIManager:initLooper()
+    if Device:isHardenedOffline() then
+        self.looper = nil
+        return false
+    end
     if G_defaults:readSetting("DUSE_TURBO_LIB") and not self.looper then
         TURBO_SSL = true -- luacheck: ignore
         __TURBO_USE_LUASOCKET__ = true -- luacheck: ignore
@@ -1608,6 +1612,7 @@ function UIManager:suspend()
 end
 
 function UIManager:askForReboot(message_text)
+    if Device:isHardenedOffline() then return false end
     -- Should always exist, as defined in `generic/device` or overwritten with `setEventHandlers`
     if self.event_handlers.Reboot then
         -- Give the other event handlers a chance to be executed.
@@ -1617,6 +1622,7 @@ function UIManager:askForReboot(message_text)
 end
 
 function UIManager:askForPowerOff(message_text)
+    if Device:isHardenedOffline() then return false end
     -- Should always exist, as defined in `generic/device` or overwritten with `setEventHandlers`
     if self.event_handlers.PowerOff then
         -- Give the other event handlers a chance to be executed.
@@ -1626,6 +1632,7 @@ function UIManager:askForPowerOff(message_text)
 end
 
 function UIManager:askForRestart(message_text)
+    if Device:isHardenedOffline() then return false end
     -- Should always exist, as defined in `generic/device` or overwritten with `setEventHandlers`
     if self.event_handlers.PowerOff then
         -- Give the other event handlers a chance to be executed.
@@ -1686,6 +1693,7 @@ end
 
 --- Sanely restart KOReader (on supported platforms).
 function UIManager:restartKOReader()
+    if Device:isHardenedOffline() then return false end
     -- This is just a magic number to indicate the restart request for shell scripts.
     self:quit(85)
 end

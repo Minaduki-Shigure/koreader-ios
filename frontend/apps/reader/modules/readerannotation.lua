@@ -1,4 +1,5 @@
 local DocSettings = require("docsettings")
+local Device = require("device")
 local LuaSettings = require("luasettings")
 local Notification = require("ui/widget/notification")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -253,7 +254,15 @@ function ReaderAnnotation:onSaveSettings()
 end
 
 function ReaderAnnotation:getExportAnnotationsFilepath()
-    local dir = G_reader_settings:readSetting("annotations_export_folder") or DocSettings:getSidecarDir(self.document.file)
+    local dir
+    if Device:isHardenedOffline() then
+        G_reader_settings:delSetting("annotations_export_folder")
+        dir = DocSettings:getSidecarDir(self.document.file)
+        if not dir or not DocSettings.preparePrivateMetadataDir(dir) then return end
+    else
+        dir = G_reader_settings:readSetting("annotations_export_folder")
+            or DocSettings:getSidecarDir(self.document.file)
+    end
     local filename = self.document.file:gsub(".*/", "")
     return dir .. "/" .. filename .. ".annotations.lua"
 end
@@ -262,6 +271,7 @@ function ReaderAnnotation:onExportAnnotations(on_closing)
     local do_export = not on_closing or G_reader_settings:isTrue("annotations_export_on_closing")
     if do_export and self:hasAnnotations() then
         local file = self:getExportAnnotationsFilepath()
+        if not file then return false end
         local anno = LuaSettings:open(file)
         local device_id = G_reader_settings:readSetting("device_id")
         anno:saveSetting("device_id", device_id)
@@ -278,6 +288,7 @@ end
 
 function ReaderAnnotation:importAnnotations()
     local file = self:getExportAnnotationsFilepath()
+    if not file then return false end
     if lfs.attributes(file, "mode") ~= "file" then return end -- no import file
     local anno = LuaSettings:open(file)
     if anno:readSetting("device_id") == G_reader_settings:readSetting("device_id") then return end -- same device

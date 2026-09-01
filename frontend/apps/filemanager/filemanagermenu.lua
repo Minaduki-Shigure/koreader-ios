@@ -333,6 +333,9 @@ function FileManagerMenu:setUpdateItemTable()
             },
             {
                 text = _("Home folder settings"),
+                enabled_func = function()
+                    return not Device:isHardenedOffline()
+                end,
                 sub_item_table = {
                     {
                         text = _("Set home folder"),
@@ -820,12 +823,14 @@ To:
         })
     end
 
-    self.menu_items.cloud_storage = {
-        text = _("Cloud storage"),
-        callback = function()
-            self:onShowCloudStorage()
-        end,
-    }
+    if not Device:isHardenedOffline() then
+        self.menu_items.cloud_storage = {
+            text = _("Cloud storage"),
+            callback = function()
+                self:onShowCloudStorage()
+            end,
+        }
+    end
 
     -- main menu tab
     self.menu_items.open_last_document = {
@@ -1135,6 +1140,7 @@ function FileManagerMenu:registerToMainMenu(widget)
 end
 
 function FileManagerMenu:onShowCloudStorage()
+    if Device:isHardenedOffline() then return false end
     local CloudStorage = require("apps/cloudstorage/cloudstorage")
     UIManager:show(CloudStorage:new{ ui = self.ui })
     return true

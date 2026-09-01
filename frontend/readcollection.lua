@@ -1,5 +1,6 @@
 local BookList = require("ui/widget/booklist")
 local DataStorage = require("datastorage")
+local DocumentPathPolicy = require("document/documentpathpolicy")
 local DocumentRegistry = require("document/documentregistry")
 local LuaSettings = require("luasettings")
 local ffiUtil = require("ffi/util")
@@ -8,6 +9,7 @@ local logger = require("logger")
 local util = require("util")
 
 local collection_file = DataStorage:getSettingsDir() .. "/collection.lua"
+local hardened_offline = os.getenv("KO_HARDENED_OFFLINE") == "1"
 
 local ReadCollection = {
     coll = nil, -- hash table
@@ -17,10 +19,17 @@ local ReadCollection = {
     default_collection_name = "favorites",
 }
 
+local function resolveCollectionPath(path)
+    if hardened_offline then
+        return DocumentPathPolicy:resolveExistingPath(path)
+    end
+    return ffiUtil.realpath(path)
+end
+
 -- read, write
 
 local function buildEntry(file, order, attr)
-    file = ffiUtil.realpath(file)
+    file = resolveCollectionPath(file)
     if file then
         attr = attr or lfs.attributes(file)
         if attr and attr.mode == "file" then
@@ -47,23 +56,36 @@ function ReadCollection:_read()
     logger.dbg("ReadCollection: reading from collection file")
     self.coll = {}
     self.coll_settings = {}
+    self.coll_default = nil
     local updated_collections = {}
     for coll_name, collection in pairs(collections.data) do
-        local coll = {}
-        for _, v in ipairs(collection) do
-            local item = buildEntry(v.file, v.order)
-            if item then -- exclude deleted files
-                coll[item.file] = item
+        if type(coll_name) == "string" and type(collection) == "table" then
+            local coll = {}
+            for _, v in ipairs(collection) do
+                local item = type(v) == "table" and buildEntry(v.file, v.order)
+                if item then -- exclude deleted and outside-Books files
+                    coll[item.file] = item
+                elseif hardened_offline then
+                    updated_collections[coll_name] = true
+                end
             end
+            self.coll[coll_name] = coll
+            self.coll_settings[coll_name] = type(collection.settings) == "table"
+                and collection.settings or { order = 1 } -- favorites, first run
+            if self.coll_settings[coll_name].default then
+                self.coll_default = coll_name
+            end
+            if self:updateCollectionFromFolder(coll_name) > 0 then
+                updated_collections[coll_name] = true
+            end
+        elseif hardened_offline then
+            updated_collections[1] = true
         end
-        self.coll[coll_name] = coll
-        self.coll_settings[coll_name] = collection.settings or { order = 1 } -- favorites, first run
-        if self.coll_settings[coll_name].default then
-            self.coll_default = coll_name
-        end
-        if self:updateCollectionFromFolder(coll_name) > 0 then
-            updated_collections[coll_name] = true
-        end
+    end
+    if self.coll[self.default_collection_name] == nil then
+        self.coll[self.default_collection_name] = {}
+        self.coll_settings[self.default_collection_name] = { order = 1 }
+        updated_collections[self.default_collection_name] = true
     end
     if next(updated_collections) ~= nil then
         self:write(updated_collections)
@@ -92,7 +114,7 @@ function ReadCollection:write(updated_collections)
 end
 
 function ReadCollection:updateLastBookTime(file)
-    file = ffiUtil.realpath(file)
+    file = resolveCollectionPath(file)
     if file then
         local now = os.time()
         for _, coll in pairs(self.coll) do
@@ -148,17 +170,21 @@ end
 
 function ReadCollection:addItem(file, collection_name, attr)
     local item = buildEntry(file, self:getCollectionNextOrder(collection_name), attr)
+    if not item then return false end
     self.coll[collection_name][item.file] = item
+    return true
 end
 
 function ReadCollection:addRemoveItemMultiple(file, collections_to_add)
-    file = ffiUtil.realpath(file) or file
+    file = resolveCollectionPath(file)
+    if not file then return false end
     local attr
     for coll_name, coll in pairs(self.coll) do
         if collections_to_add[coll_name] then
             if not coll[file] then
                 attr = attr or lfs.attributes(file)
-                coll[file] = buildEntry(file, self:getCollectionNextOrder(coll_name), attr)
+                local item = buildEntry(file, self:getCollectionNextOrder(coll_name), attr)
+                if item then coll[file] = item end
             end
         else
             if coll[file] then
@@ -170,15 +196,20 @@ end
 
 function ReadCollection:addItemsMultiple(files, collections_to_add)
     local count = 0
-    for file in pairs(files) do
-        file = ffiUtil.realpath(file) or file
-        local attr
-        for coll_name in pairs(collections_to_add) do
-            local coll = self.coll[coll_name]
-            if not coll[file] then
-                attr = attr or lfs.attributes(file)
-                coll[file] = buildEntry(file, self:getCollectionNextOrder(coll_name), attr)
-                count = count + 1
+    for candidate in pairs(files) do
+        local file = resolveCollectionPath(candidate)
+        if file then
+            local attr
+            for coll_name in pairs(collections_to_add) do
+                local coll = self.coll[coll_name]
+                if not coll[file] then
+                    attr = attr or lfs.attributes(file)
+                    local item = buildEntry(file, self:getCollectionNextOrder(coll_name), attr)
+                    if item then
+                        coll[file] = item
+                        count = count + 1
+                    end
+                end
             end
         end
     end
@@ -228,7 +259,7 @@ function ReadCollection:removeItemsByPath(path) -- FM: delete folder
     local do_write
     for coll_name, coll in pairs(self.coll) do
         for file_name in pairs(coll) do
-            if util.stringStartsWith(file_name, path) then
+            if file_name == path or util.stringStartsWith(file_name, path .. "/") then
                 coll[file_name] = nil
                 do_write = true
             end
@@ -244,12 +275,14 @@ function ReadCollection:_updateItem(coll_name, file_name, new_filepath, new_path
     local item_old = coll[file_name]
     new_filepath = new_filepath or new_path .. "/" .. item_old.text
     local item = buildEntry(new_filepath, item_old.order, item_old.attr) -- no lfs call
+    if not item then return end
     coll[item.file] = item
     coll[file_name] = nil
     return item.file
 end
 
 function ReadCollection:updateItem(file, new_filepath) -- FM: rename file, move file
+    if hardened_offline then return false end
     file = ffiUtil.realpath(file) or file
     local do_write
     for coll_name, coll in pairs(self.coll) do
@@ -264,6 +297,7 @@ function ReadCollection:updateItem(file, new_filepath) -- FM: rename file, move 
 end
 
 function ReadCollection:updateItems(files, new_path) -- FM: move files
+    if hardened_offline then return false end
     local do_write
     for file in pairs(files) do
         file = ffiUtil.realpath(file) or file
@@ -280,6 +314,7 @@ function ReadCollection:updateItems(files, new_path) -- FM: move files
 end
 
 function ReadCollection:updateItemsByPath(path, new_path) -- FM: rename folder, move folder
+    if hardened_offline then return false end
     local len = #path
     local do_write
     for coll_name, coll in pairs(self.coll) do
@@ -287,8 +322,10 @@ function ReadCollection:updateItemsByPath(path, new_path) -- FM: rename folder, 
         for file_name in pairs(coll) do
             if not seen[file_name] and file_name:sub(1, len) == path then
                 local new_file_name = self:_updateItem(coll_name, file_name, new_path .. file_name:sub(len + 1))
-                seen[new_file_name] = true
-                do_write = true
+                if new_file_name then
+                    seen[new_file_name] = true
+                    do_write = true
+                end
             end
         end
     end
@@ -298,6 +335,7 @@ function ReadCollection:updateItemsByPath(path, new_path) -- FM: rename folder, 
 end
 
 function ReadCollection:updateCollectionFromFolder(collection_name, folders, is_showing)
+    if hardened_offline then return 0 end
     folders = folders or self.coll_settings[collection_name].folders
     local count = 0
     if folders then
@@ -332,9 +370,10 @@ function ReadCollection:updateCollectionFromFolder(collection_name, folders, is_
             end
         end
         for folder, folder_settings in pairs(folders) do
-            if not is_showing or folder_settings.scan_on_show then
-                logger.dbg("ReadCollection: scanning folder", folder)
-                util.findFiles(folder, add_item_callback, folder_settings.subfolders)
+            local allowed_folder = resolveCollectionPath(folder)
+            if allowed_folder and (not is_showing or folder_settings.scan_on_show) then
+                logger.dbg("ReadCollection: scanning folder", allowed_folder)
+                util.findFiles(allowed_folder, add_item_callback, folder_settings.subfolders)
             end
         end
     end

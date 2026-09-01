@@ -97,6 +97,7 @@ end
 
 function FileChooser:init()
     self.path_items = {}
+    self.path = filemanagerutil.constrainToHome(self.path) or self.path
     if lfs.attributes(self.path, "mode") ~= "directory" then
         self.path = filemanagerutil.getHomeFolder()
     end
@@ -120,7 +121,8 @@ function FileChooser:getPathList(path, collate, dirs, files)
                 local fullpath = path.."/"..f
                 local attributes = lfs.attributes(fullpath) or {}
                 local item = true
-                if attributes.mode == "directory" and f ~= "." and f ~= ".."
+                local path_allowed = filemanagerutil.isPathInsideHome(fullpath)
+                if path_allowed and attributes.mode == "directory" and f ~= "." and f ~= ".."
                         and self:show_dir(f) then
                     if FileChooser.show_flat_view then
                         self:getPathList(fullpath, collate, dirs, files)
@@ -131,7 +133,7 @@ function FileChooser:getPathList(path, collate, dirs, files)
                         table.insert(dirs, item)
                     end
                 -- Always ignore macOS resource forks.
-                elseif attributes.mode == "file" and not util.stringStartsWith(f, "._")
+                elseif path_allowed and attributes.mode == "file" and not util.stringStartsWith(f, "._")
                         and self:show_file(f, fullpath) then
                     if collate then -- when collate == nil count only to display in folder mandatory
                         item = self:getListItem(path, f, fullpath, attributes, collate)
@@ -265,6 +267,7 @@ function FileChooser:genItemTable(dirs, files, path)
         if path ~= "/"
             and not (G_reader_settings:isFalse("show_parent_folder") and self.name == "filemanager")
             and not (G_reader_settings:isTrue("lock_home_folder") and path == G_reader_settings:readSetting("home_dir"))
+            and not filemanagerutil.isHomeRoot(path)
         then
             table.insert(item_table, 1, {
                 text = BD.mirroredUILayout() and BD.ltr("../ ⬆") or "⬆ ../",
@@ -338,10 +341,10 @@ function FileChooser:refreshPath()
 end
 
 function FileChooser:changeToPath(path, focused_path)
-    path = ffiUtil.realpath(path)
+    path = filemanagerutil.constrainToHome(path)
     self.path = path
 
-    if focused_path then
+    if focused_path and filemanagerutil.isPathInsideHome(focused_path) then
         self.focused_path = focused_path
         -- We know focused_path is a child of path. In case path is
         -- not a readable directory, we can have focused_path shown,
@@ -365,7 +368,7 @@ function FileChooser:changeToPath(path, focused_path)
 end
 
 function FileChooser:goHome()
-    local home_dir = G_reader_settings:readSetting("home_dir")
+    local home_dir = filemanagerutil.getHomeFolder()
     if not home_dir or lfs.attributes(home_dir, "mode") ~= "directory" then
         -- Try some sane defaults, depending on platform
         home_dir = Device.home_dir
@@ -384,7 +387,8 @@ function FileChooser:goHome()
 end
 
 function FileChooser:onFolderUp()
-    if not (G_reader_settings:isTrue("lock_home_folder") and
+    if not filemanagerutil.isHomeRoot(self.path) and
+        not (G_reader_settings:isTrue("lock_home_folder") and
             self.path == G_reader_settings:readSetting("home_dir")) then
         self:changeToPath(string.format("%s/..", self.path), self.path)
     end

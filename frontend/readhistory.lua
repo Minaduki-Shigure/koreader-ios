@@ -9,6 +9,10 @@ local lfs = require("libs/libkoreader-lfs")
 local realpath = ffiutil.realpath
 local C_ = require("gettext").pgettext
 
+local hardened_offline = os.getenv("KO_HARDENED_OFFLINE") == "1"
+local SafeSettings = hardened_offline and require("safesettings")
+local DocumentPathPolicy = hardened_offline and require("document/documentpathpolicy")
+
 local history_file = joinPath(DataStorage:getDataDir(), "history.lua")
 
 -- This is a singleton
@@ -23,7 +27,14 @@ local function getMandatory(date_time)
 end
 
 local function buildEntry(input_time, input_file)
-    local file_path = realpath(input_file) or input_file -- keep orig file path of deleted files
+    if type(input_time) ~= "number" or type(input_file) ~= "string" then return end
+    local file_path
+    if hardened_offline then
+        file_path = DocumentPathPolicy:resolveDocument(input_file)
+    else
+        file_path = realpath(input_file) or input_file -- keep orig file path of deleted files on ordinary platforms
+    end
+    if not file_path then return end
     local file_exists = lfs.attributes(file_path, "mode") == "file"
     return {
         time = input_time,
@@ -107,12 +118,21 @@ function ReadHistory:_read(force_read)
     end
     if force_read or (history_file_modification_time > self.last_read_time) then
         self.last_read_time = history_file_modification_time
-        local ok, data = pcall(dofile, history_file)
+        local ok, data
+        if hardened_offline then
+            ok, data = SafeSettings.loadTable(history_file)
+        else
+            ok, data = pcall(dofile, history_file)
+        end
         if ok and data then
             self.hist = {}
+            local dropped_entry
             for _, v in ipairs(data) do
-                table.insert(self.hist, buildEntry(v.time, v.file))
+                local item = type(v) == "table" and buildEntry(v.time, v.file)
+                if item then table.insert(self.hist, item) end
+                if not item then dropped_entry = true end
             end
+            if hardened_offline and dropped_entry then self:_flush() end
         end
         return true
     end
@@ -121,6 +141,7 @@ end
 --- Reads history from legacy history folder and remove it iff empty.
 -- Legacy history file is deleted when respective book is opened or deleted.
 function ReadHistory:_readLegacyHistory()
+    if hardened_offline then return end
     local history_dir = DataStorage:getHistoryDir()
     if not lfs.attributes(history_dir) then return end
     local history_updated
@@ -146,7 +167,7 @@ end
 function ReadHistory:ensureLastFile()
     local last_existing_file
     for _, v in ipairs(self.hist) do
-        if v.select_enabled then
+        if v.select_enabled and (not hardened_offline or DocumentPathPolicy:resolveDocument(v.file)) then
             last_existing_file = v.file
             break
         end
@@ -163,7 +184,8 @@ function ReadHistory:getPreviousFile(current_file)
     end
     for _, v in ipairs(self.hist) do
         -- skip current document and deleted items kept in history
-        if v.file ~= current_file and v.select_enabled then
+        if v.file ~= current_file and v.select_enabled
+                and (not hardened_offline or DocumentPathPolicy:resolveDocument(v.file)) then
             return v.file
         end
     end
@@ -171,6 +193,7 @@ end
 
 --- Updates the history list after renaming/moving a file.
 function ReadHistory:updateItem(file, new_filepath)
+    if hardened_offline then return false end
     local index = self:getIndexByFile(file)
     if index then
         local item = self.hist[index]
@@ -181,12 +204,14 @@ function ReadHistory:updateItem(file, new_filepath)
 end
 
 function ReadHistory:updateItems(files, new_path) -- files = { filepath = true, }
+    if hardened_offline then return false end
     local history_updated
     for file in pairs(files) do
         local index = self:getIndexByFile(file)
         if index then
             local item = self.hist[index]
-            item.file = new_path .. "/" .. item.text
+            local new_file = new_path .. "/" .. item.text
+            item.file = new_file
             history_updated = true
         end
     end
@@ -197,11 +222,13 @@ end
 
 --- Updates the history list after renaming/moving a folder.
 function ReadHistory:updateItemsByPath(old_path, new_path)
+    if hardened_offline then return false end
     local len = #old_path
     local history_updated
     for i, v in ipairs(self.hist) do
         if v.file:sub(1, len) == old_path then
-            self.hist[i].file = new_path .. v.file:sub(len + 1)
+            local new_file = new_path .. v.file:sub(len + 1)
+            self.hist[i].file = new_file
             history_updated = true
         end
     end
@@ -237,7 +264,7 @@ function ReadHistory:folderDeleted(path)
     local history_updated
     for i = #self.hist, 1, -1 do
         local file = self.hist[i].file
-        if util.stringStartsWith(file, path) then
+        if file == path or util.stringStartsWith(file, path .. "/") then
             self:fileDeleted(i)
             history_updated = true
             DocSettings.updateLocation(file) -- remove sdr if not in book location
@@ -311,7 +338,11 @@ end
 --- Adds new item (last opened document) to the top of the history list.
 -- If item time (ts) is passed, add item to the history list at this time position.
 function ReadHistory:addItem(file, ts, no_flush)
-    file = realpath(file)
+    if hardened_offline then
+        file = DocumentPathPolicy:resolveDocument(file)
+    else
+        file = realpath(file)
+    end
     if not file or (ts and lfs.attributes(file, "mode") ~= "file") then
         return -- bad legacy item
     end

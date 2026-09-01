@@ -136,7 +136,7 @@ function ReaderLink:init()
     self.ges_events = nil
 
     -- Set always supported external link schemes
-    self.supported_external_schemes = {"http", "https"}
+    self.supported_external_schemes = Device:isHardenedOffline() and {} or {"http", "https"}
 
     -- Set up buttons for alternative external link handling methods
     self._external_link_buttons = {}
@@ -198,6 +198,10 @@ function ReaderLink:init()
             end
         }
     end
+    if Device:isHardenedOffline() then
+        self._external_link_buttons["30_browser"] = nil
+        self._external_link_buttons["40_wiki_lookup"] = nil
+    end
     self._external_link_buttons["45_wiki_saved"] = function(this, link_url)
         return {
             text = _("Read EPUB"),
@@ -234,6 +238,7 @@ end
 -- Registering the "file" scheme also overrides its default handling.
 -- Registered schemes are reset on each initialisation of ReaderLink.
 function ReaderLink:registerScheme(scheme)
+    if Device:isHardenedOffline() then return false end
     table.insert(self.supported_external_schemes, scheme)
 end
 
@@ -956,6 +961,9 @@ function ReaderLink:openFileFromLink(link_url)
         linked_filename = ffiUtil.joinPath(self.document_dir, linked_filename)
     end
     linked_filename = ffiUtil.realpath(linked_filename) -- clean full path from ./ or ../
+    if Device:isHardenedOffline() and not filemanagerutil.isPathInsideHome(linked_filename) then
+        return false
+    end
     if linked_filename and lfs.attributes(linked_filename, "mode") == "file" then
         local display_filename = linked_filename
         if anchor and after_open_callback == nil then
@@ -976,6 +984,7 @@ function ReaderLink:openFileFromLink(link_url)
 end
 
 function ReaderLink:onGoToExternalLink(link_url)
+    if Device:isHardenedOffline() then return false end
     local buttons, title = self:getButtonsForExternalLinkDialog(link_url)
     self.external_link_dialog = ButtonDialog:new{
         title = title,

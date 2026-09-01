@@ -3,6 +3,7 @@ Centralizes any and all one time migration concerns.
 --]]
 
 local DataStorage = require("datastorage")
+local Device = require("device")
 local ffiUtil = require("ffi/util")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
@@ -475,7 +476,7 @@ if last_migration_date < 20220914 then
 end
 
 -- The great defaults.persistent.lua migration to LuaDefaults (https://github.com/koreader/koreader/pull/9546)
-if last_migration_date < 20220930 then
+if last_migration_date < 20220930 and not Device:isHardenedOffline() then
     logger.info("Performing one-time migration for 20220930")
 
     local defaults_path = DataStorage:getDataDir() .. "/defaults.persistent.lua"

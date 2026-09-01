@@ -444,10 +444,12 @@ function DeviceListener:onRequestUSBMS()
 end
 
 function DeviceListener:onExit(callback)
+    if Device:isHardenedOffline() then return false end
     self.ui.menu:exitOrRestart(callback)
 end
 
 function DeviceListener:onRestart()
+    if Device:isHardenedOffline() then return false end
     self.ui.menu:exitOrRestart(function() UIManager:restartKOReader() end)
 end
 
@@ -456,10 +458,12 @@ function DeviceListener:onRequestSuspend()
 end
 
 function DeviceListener:onRequestReboot()
+    if Device:isHardenedOffline() then return false end
     UIManager:askForReboot()
 end
 
 function DeviceListener:onRequestPowerOff()
+    if Device:isHardenedOffline() then return false end
     UIManager:askForPowerOff()
 end
 

@@ -110,7 +110,7 @@ function BookInfo:show(doc_settings_or_file, book_props)
     book_props.pages = book_props.pages or BookList.getBookInfo(file).pages
     -- cover image
     if is_file then
-        self.custom_book_cover = DocSettings:findCustomCoverFile(file)
+        self.custom_book_cover = not Device:isHardenedOffline() and DocSettings:findCustomCoverFile(file)
         local key_text = self.prop_text["cover"]
         if self.custom_book_cover then
             key_text = "\u{F040} " .. key_text
@@ -119,9 +119,9 @@ function BookInfo:show(doc_settings_or_file, book_props)
             callback = function()
                 self:onShowBookCover(file)
             end,
-            hold_callback = function()
+            hold_callback = not Device:isHardenedOffline() and function()
                 self:showCustomDialog(file, book_props)
-            end,
+            end or nil,
             separator = true,
         })
     end
@@ -262,7 +262,7 @@ Source (print edition):
         hold_callback = summary_hold_callback, separator = true })
 
     -- Notebook file
-    if is_file then
+    if is_file and not Device:isHardenedOffline() then
         local notebook_file = self:getNotebookFile(doc_settings_or_file)
         local notebook_file_callback = function()
             self:showNotebookFileDialog(notebook_file, doc_settings_or_file, book_props)
@@ -508,6 +508,7 @@ function BookInfo:updateBookInfo(file, book_props, prop_updated, prop_value_old)
 end
 
 function BookInfo:setCustomCover(file, book_props)
+    if Device:isHardenedOffline() then return false end
     if self.custom_book_cover then -- reset custom cover
         if os.remove(self.custom_book_cover) then
             DocSettings.removeSidecarDir(util.splitFilePathName(self.custom_book_cover))
@@ -531,6 +532,7 @@ function BookInfo:setCustomCover(file, book_props)
 end
 
 function BookInfo:setCustomCoverFromImage(file, image_file)
+    if Device:isHardenedOffline() then return false end
     local custom_book_cover = DocSettings:findCustomCoverFile(file)
     if custom_book_cover then
         os.remove(custom_book_cover)
@@ -625,6 +627,7 @@ function BookInfo:showCustomEditDialog(file, book_props, prop_key)
 end
 
 function BookInfo:showCustomDialog(file, book_props, prop_key)
+    if Device:isHardenedOffline() and not prop_key then return false end
     local original_prop, custom_prop, prop_is_cover
     if prop_key then -- metadata
         if self.custom_doc_settings then
@@ -778,6 +781,7 @@ end
 -- notebook file
 
 function BookInfo:getNotebookFile(doc_settings_or_file)
+    if Device:isHardenedOffline() then return end
     local notebook_file
     if type(doc_settings_or_file) == "table" then
         notebook_file = doc_settings_or_file:readSetting("notebook_file")
@@ -799,6 +803,7 @@ function BookInfo:getNotebookFile(doc_settings_or_file)
 end
 
 function BookInfo:showNotebookFileDialog(notebook_file, doc_settings_or_file, book_props)
+    if Device:isHardenedOffline() then return false end
     local has_sidecar = type(doc_settings_or_file) == "table"
     local file = has_sidecar and doc_settings_or_file:readSetting("doc_path") or doc_settings_or_file
     local function saveNotebookFile(new_notebook_file)
@@ -913,6 +918,7 @@ function BookInfo:showNotebookFileDialog(notebook_file, doc_settings_or_file, bo
 end
 
 function BookInfo:onShowNotebookFile()
+    if Device:isHardenedOffline() then return false end
     local notebook_file = self:getNotebookFile(self.ui.doc_settings)
     if self.ui.texteditor then
         local function saveNotebookFile(new_notebook_file)

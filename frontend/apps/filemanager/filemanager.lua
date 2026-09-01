@@ -23,12 +23,12 @@ local InputContainer = require("ui/widget/container/inputcontainer")
 local InputDialog = require("ui/widget/inputdialog")
 local LanguageSupport = require("languagesupport")
 local MultiConfirmBox = require("ui/widget/multiconfirmbox")
-local NetworkListener = require("ui/network/networklistener")
+local NetworkListener = not Device:isHardenedOffline() and require("ui/network/networklistener")
 local PluginLoader = require("pluginloader")
 local ReadCollection = require("readcollection")
 local ReaderDeviceStatus = require("apps/reader/modules/readerdevicestatus")
 local ReaderDictionary = require("apps/reader/modules/readerdictionary")
-local ReaderWikipedia = require("apps/reader/modules/readerwikipedia")
+local ReaderWikipedia = not Device:isHardenedOffline() and require("apps/reader/modules/readerwikipedia")
 local ReadHistory = require("readhistory")
 local Screenshoter = require("ui/widget/screenshoter")
 local TitleBar = require("ui/widget/titlebar")
@@ -397,6 +397,14 @@ function FileManager:init()
     self.active_widgets = {}
     self.postInitCallback = {}
 
+    if Device:isHardenedOffline() then
+        local home = filemanagerutil.getDefaultDir()
+        G_reader_settings:saveSetting("home_dir", home)
+        G_reader_settings:saveSetting("lastdir", filemanagerutil.constrainToHome(
+            G_reader_settings:readSetting("lastdir")))
+        G_reader_settings:makeTrue("lock_home_folder")
+    end
+
     self:registerModule("screenshot", Screenshoter:new{
         prefix = "FileManager",
         ui = self,
@@ -409,10 +417,14 @@ function FileManager:init()
     self:registerModule("folder_shortcuts", FileManagerShortcuts:new{ ui = self })
     self:registerModule("languagesupport", LanguageSupport:new{ ui = self })
     self:registerModule("dictionary", ReaderDictionary:new{ ui = self })
-    self:registerModule("wikipedia", ReaderWikipedia:new{ ui = self })
+    if ReaderWikipedia then
+        self:registerModule("wikipedia", ReaderWikipedia:new{ ui = self })
+    end
     self:registerModule("devicestatus", ReaderDeviceStatus:new{ ui = self })
     self:registerModule("devicelistener", DeviceListener:new{ ui = self })
-    self:registerModule("networklistener", NetworkListener:new{ ui = self })
+    if NetworkListener then
+        self:registerModule("networklistener", NetworkListener:new{ ui = self })
+    end
 
     -- koreader plugins
     for _, plugin_module in ipairs(PluginLoader:loadPlugins()) do
@@ -448,6 +460,7 @@ function FileManager:init()
 end
 
 function FileChooser:onBack()
+    if Device:isHardenedOffline() then return true end
     local back_to_exit = G_reader_settings:readSetting("back_to_exit", "prompt")
     local back_in_filemanager = G_reader_settings:readSetting("back_in_filemanager", "default")
     if back_in_filemanager == "default" then
@@ -870,6 +883,13 @@ function FileManager:onHome()
 end
 
 function FileManager:setHome(path)
+    if Device:isHardenedOffline() then
+        local home = filemanagerutil.getDefaultDir()
+        G_reader_settings:saveSetting("home_dir", home)
+        G_reader_settings:makeTrue("lock_home_folder")
+        self.file_chooser:changeToPath(home)
+        return true
+    end
     path = path or self.file_chooser.path
     UIManager:show(ConfirmBox:new{
         text = T(_("Set '%1' as HOME folder?"), BD.dirpath(path)),
@@ -1316,7 +1336,11 @@ function FileManager:showFiles(path, focused_file, selected_files)
         FileManager.instance:onClose()
     end
 
-    path = ffiUtil.realpath(path or G_reader_settings:readSetting("lastdir") or filemanagerutil.getDefaultDir())
+    path = filemanagerutil.constrainToHome(
+        path or G_reader_settings:readSetting("lastdir") or filemanagerutil.getDefaultDir())
+    if focused_file and not filemanagerutil.isPathInsideHome(focused_file) then
+        focused_file = nil
+    end
     G_reader_settings:saveSetting("lastdir", path)
     self:setRotationMode()
     local file_manager = FileManager:new{

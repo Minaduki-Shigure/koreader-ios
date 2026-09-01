@@ -270,6 +270,9 @@ if not Device:isStartupScriptUpToDate() then
 end
 
 -- Start app
+if file and Device:isHardenedOffline() then
+    file = require("document/documentpathpolicy"):resolveDocument(file)
+end
 if exit_code then -- luacheck: ignore
     -- We're quitting to finalize an update.
 elseif file then
@@ -285,10 +288,20 @@ else
     local last_file = G_reader_settings:readSetting("lastfile")
     local start_with = G_reader_settings:readSetting("start_with") or "filemanager"
 
-    local QuickStart = require("ui/quickstart")
-    if not QuickStart:isShown() then
-        start_with = "last"
-        last_file = QuickStart:getQuickStart()
+    if Device:isHardenedOffline() then
+        local DocumentPathPolicy = require("document/documentpathpolicy")
+        if last_file and not DocumentPathPolicy:resolveDocument(last_file) then
+            G_reader_settings:delSetting("lastfile")
+            last_file = nil
+        end
+        start_with = "filemanager"
+        G_reader_settings:saveSetting("start_with", start_with)
+    else
+        local QuickStart = require("ui/quickstart")
+        if not QuickStart:isShown() then
+            start_with = "last"
+            last_file = QuickStart:getQuickStart()
+        end
     end
 
     if start_with == "last" and last_file and lfs.attributes(last_file, "mode") ~= "file" then

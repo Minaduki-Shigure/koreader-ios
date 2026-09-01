@@ -7,6 +7,7 @@ local InputContainer = require("ui/widget/container/inputcontainer")
 local UIManager = require("ui/uimanager")
 local ffiutil = require("ffi/util")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
+local lfs = require("libs/libkoreader-lfs")
 local util = require("util")
 local Screen = require("device").screen
 local _ = require("gettext")
@@ -15,6 +16,19 @@ local Screenshoter = InputContainer:extend{
     prefix = "Screenshot",
     default_dir = DataStorage:getFullDataDir() .. "/screenshots",
 }
+
+local function getPrivateScreenshotDir()
+    local data_dir = ffiutil.realpath(DataStorage:getDataDir())
+    local screenshot_dir = DataStorage:getDataDir() .. "/screenshots"
+    local mode = lfs.symlinkattributes(screenshot_dir, "mode")
+    if not data_dir or (mode and mode ~= "directory") then return end
+    if not mode and not util.makePath(screenshot_dir) then return end
+    local canonical = ffiutil.realpath(screenshot_dir)
+    if canonical and (canonical == data_dir
+            or util.stringStartsWith(canonical, data_dir .. "/")) then
+        return canonical
+    end
+end
 
 function Screenshoter:init()
     self:registerKeyEvents()
@@ -40,6 +54,10 @@ function Screenshoter:init()
 end
 
 function Screenshoter:getScreenshotDir()
+    if Device:isHardenedOffline() then
+        G_reader_settings:delSetting("screenshot_dir")
+        return getPrivateScreenshotDir()
+    end
     local screenshot_dir = G_reader_settings:readSetting("screenshot_dir")
     if screenshot_dir and util.makePath(screenshot_dir) then
         return screenshot_dir:gsub("/$", "")
@@ -57,8 +75,11 @@ function Screenshoter:onScreenshot(screenshot_name, caller_callback)
         end
         prefix = self.prefix .. "_" .. ffiutil.basename(file) .. "_" .. curr_page
     end
-    if not screenshot_name then
-        screenshot_name = os.date(self:getScreenshotDir() .. "/" .. prefix .. "_%Y-%m-%d_%H%M%S.png")
+    local screenshot_dir = self:getScreenshotDir()
+    if not screenshot_dir then return false end
+    if Device:isHardenedOffline() or not screenshot_name then
+        local filename = os.date(prefix .. "_%Y-%m-%d_%H%M%S.png")
+        screenshot_name = screenshot_dir .. "/" .. util.getSafeFilename(filename, screenshot_dir)
     end
     Screen:shot(screenshot_name)
 
@@ -68,13 +89,16 @@ function Screenshoter:onScreenshot(screenshot_name, caller_callback)
             {
                 text = _("Delete"),
                 callback = function()
-                    os.remove(screenshot_name)
+                    local parent = ffiutil.realpath(ffiutil.dirname(screenshot_name))
+                    if not Device:isHardenedOffline() or parent == screenshot_dir then
+                        os.remove(screenshot_name)
+                    end
                     dialog:onClose()
                 end,
             },
             {
                 text = _("Set as book cover"),
-                enabled = file and true or false,
+                enabled = file and not Device:isHardenedOffline() and true or false,
                 callback = function()
                     self.ui.bookinfo:setCustomCoverFromImage(file, screenshot_name)
                     os.remove(screenshot_name)
@@ -133,6 +157,7 @@ Screenshoter.onTapDiagonal = Screenshoter.onScreenshot
 Screenshoter.onSwipeDiagonal = Screenshoter.onScreenshot
 
 function Screenshoter:chooseFolder()
+    if Device:isHardenedOffline() then return false end
     local title_header = _("Current screenshot folder:")
     local current_path = G_reader_settings:readSetting("screenshot_dir")
     local default_path = self.default_dir

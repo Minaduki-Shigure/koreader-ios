@@ -1,5 +1,6 @@
 -- module for integration with third-party applications
 local logger = require("logger")
+local hardened_offline = os.getenv("KO_HARDENED_OFFLINE") == "1"
 
 local roles = {
     "dict",
@@ -15,16 +16,23 @@ function M:new(o)
     end
     setmetatable(o, self)
     self.__index = self
+    if hardened_offline then
+        o.dicts = {}
+        o.translators = {}
+        return o
+    end
 
     -- one-time availability check
     for _, role in pairs(roles) do
         -- user override, if available
-        local user_file = role == "dict" and "dictionaries.lua" or role .. "s.lua"
-        local user = require("datastorage"):getDataDir() .. "/" .. user_file
-        local ok, user_dicts = pcall(dofile, user)
-        if ok then
-            o[role.."s"] = user_dicts
-            o.is_user_list = true
+        if not hardened_offline then
+            local user_file = role == "dict" and "dictionaries.lua" or role .. "s.lua"
+            local user = require("datastorage"):getDataDir() .. "/" .. user_file
+            local ok, user_dicts = pcall(dofile, user)
+            if ok then
+                o[role.."s"] = user_dicts
+                o.is_user_list = true
+            end
         end
         for i, value in ipairs(o[role.."s"] or {}) do
             local app = value[4]

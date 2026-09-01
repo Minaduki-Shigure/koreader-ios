@@ -7,7 +7,9 @@ This module defines stubs for common methods.
 local DataStorage = require("datastorage")
 local Event = require("ui/event")
 local Geom = require("ui/geometry")
-local NetInfo = require("ffi/netinfo")
+local is_hardened_ios = os.getenv("KO_IOS") == "1"
+    and os.getenv("KO_HARDENED_OFFLINE") == "1"
+local NetInfo = not is_hardened_ios and require("ffi/netinfo")
 local UIManager -- Updated on UIManager init
 local logger = require("logger")
 local ffi = require("ffi")
@@ -19,9 +21,10 @@ local C = ffi.C
 local T = ffiUtil.template
 
 -- We'll need a bunch of stuff for getifaddrs & co in Device:retrieveNetworkInfo
-require("ffi/posix_h")
+if not is_hardened_ios then
+    require("ffi/posix_h")
 
-ffi.cdef[[
+    ffi.cdef[[
 struct icmp_echo {
   uint8_t type;
   uint8_t code;
@@ -31,8 +34,8 @@ struct icmp_echo {
 };
 ]]
 
-if ffi.abi("le") then
-    ffi.cdef[[
+    if ffi.abi("le") then
+        ffi.cdef[[
 struct ip_header
 {
     unsigned int ihl:4;
@@ -48,8 +51,8 @@ struct ip_header
     uint32_t daddr;
   };
 ]]
-else
-    ffi.cdef[[
+    else
+        ffi.cdef[[
 struct ip_header
 {
     unsigned int version:4;
@@ -64,7 +67,8 @@ struct ip_header
     uint32_t saddr;
     uint32_t daddr;
   };
-]]
+        ]]
+    end
 end
 
 local function yes() return true end
@@ -157,6 +161,8 @@ local Device = {
     isRemarkable = no,
     isSonyPRSTUX = no,
     isSDL = no,
+    isIOS = no,
+    isHardenedOffline = no,
     isEmulator = no,
     isDesktop = no,
 

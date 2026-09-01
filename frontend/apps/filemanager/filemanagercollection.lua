@@ -127,7 +127,7 @@ function FileManagerCollection:updateItemTable(item_table, focused_file)
     if item_table == nil then
         item_table = {}
         for _, item in pairs(ReadCollection.coll[self.booklist_menu.path]) do
-            if self:isItemMatch(item) then
+            if filemanagerutil.isPathInsideHome(item.file) and self:isItemMatch(item) then
                 local item_tmp = {
                     file      = item.file,
                     text      = item.text,
@@ -144,6 +144,14 @@ function FileManagerCollection:updateItemTable(item_table, focused_file)
         if #item_table > 1 then
             table.sort(item_table, self.sorting_func)
         end
+    else
+        local allowed_items = {}
+        for _, item in ipairs(item_table) do
+            if filemanagerutil.isPathInsideHome(item.file) then
+                table.insert(allowed_items, item)
+            end
+        end
+        item_table = allowed_items
     end
     local title, subtitle = self:getBookListTitle(item_table)
     self.booklist_menu:switchItemTable(title, item_table, -1, focused_file and { file = focused_file }, subtitle)

@@ -296,14 +296,16 @@ function Input:init()
     self.event_map[10041] = "UsbDevicePlugOut"
 
     -- user custom event map
-    local custom_event_map_location = string.format(
-        "%s/%s", DataStorage:getSettingsDir(), "event_map.lua")
-    local ok, custom_event_map = pcall(dofile, custom_event_map_location)
-    if ok then
-        for key, value in pairs(custom_event_map) do
-            self.event_map[key] = value
+    if os.getenv("KO_HARDENED_OFFLINE") ~= "1" then
+        local custom_event_map_location = string.format(
+            "%s/%s", DataStorage:getSettingsDir(), "event_map.lua")
+        local ok, custom_event_map = pcall(dofile, custom_event_map_location)
+        if ok then
+            for key, value in pairs(custom_event_map) do
+                self.event_map[key] = value
+            end
+            logger.info("loaded custom event map", custom_event_map)
         end
-        logger.info("loaded custom event map", custom_event_map)
     end
 
     if G_reader_settings:isTrue("backspace_as_back") then

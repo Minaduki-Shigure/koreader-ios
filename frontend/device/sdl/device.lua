@@ -9,6 +9,7 @@ local ffi = require("ffi")
 local logger = require("logger")
 local time = require("ui/time")
 local util = require("util")
+local is_hardened_ios = os.getenv("KO_IOS") == "1" and os.getenv("KO_HARDENED_OFFLINE") == "1"
 
 -- SDL computes WM_CLASS on X11/Wayland based on process's binary name.
 -- Some desktop environments rely on WM_CLASS to name the app and/or to assign the proper icon.
@@ -54,15 +55,24 @@ local function getLinkOpener()
 end
 
 -- third-party app support
-local external = require("device/thirdparty"):new{
-    dicts = getDesktopDicts(),
-    check = function(self, app)
-        if (isUrl(app) and getLinkOpener()) or isCommand(app) then
-            return true
-        end
-        return false
-    end,
-}
+local external
+if is_hardened_ios then
+    external = require("device/thirdparty"):new{
+        dicts = {},
+        translators = {},
+        check = function() return false end,
+    }
+else
+    external = require("device/thirdparty"):new{
+        dicts = getDesktopDicts(),
+        check = function(self, app)
+            if (isUrl(app) and getLinkOpener()) or isCommand(app) then
+                return true
+            end
+            return false
+        end,
+    }
+end
 
 local Device = Generic:extend{
     model = "SDL",
@@ -162,6 +172,112 @@ local Emulator = Device:extend{
     canStandby = no,
 }
 
+-- iOS deliberately does not inherit the SDL emulator's fake hardware or
+-- fake-connected network behavior. This build is a local document reader:
+-- networking and process/OS integration are unavailable by policy.
+local IOS = Device:extend{
+    model = "iOS (offline)",
+    home_dir = os.getenv("KO_BOOKS_HOME") or ".",
+    isIOS = yes,
+    isHardenedOffline = function()
+        return os.getenv("KO_HARDENED_OFFLINE") == "1"
+    end,
+    isEmulator = no,
+    hasKeyboard = no,
+    hasKeys = no,
+    hasDPad = no,
+    useDPadAsActionKeys = no,
+    supportsGamepad = no,
+    hasWifiToggle = no,
+    hasSeamlessWifiToggle = no,
+    hasWifiManager = no,
+    hasWifiRestore = no,
+    hasExitOptions = no,
+    hasOTAUpdates = no,
+    canRestart = no,
+    canPowerOff = no,
+    canReboot = no,
+    canSuspend = no,
+    canStandby = no,
+    canOpenLink = no,
+    openLink = no,
+    canExternalDictLookup = no,
+    isDefaultFullscreen = yes,
+    hasColorScreen = yes,
+    hasEinkScreen = no,
+    isTouchDevice = yes,
+}
+
+function IOS:canExecuteScript()
+    return false
+end
+
+function IOS:ping4()
+    return false
+end
+
+function IOS:getDefaultRoute()
+    return nil
+end
+
+function IOS:retrieveNetworkInfo()
+    return nil
+end
+
+function IOS:initNetworkManager(NetworkMgr)
+    local function offline()
+        return false
+    end
+    local function should_abort()
+        return true
+    end
+
+    -- Override both status probes and callback-based wrappers. In particular,
+    -- never retain or invoke a caller callback: strict-offline actions must
+    -- fail closed rather than unexpectedly resume later.
+    NetworkMgr.isWifiOn = offline
+    NetworkMgr.isConnected = offline
+    NetworkMgr.isOnline = offline
+    NetworkMgr.turnOnWifi = offline
+    NetworkMgr.turnOffWifi = offline
+    NetworkMgr.requestToTurnOnWifi = offline
+    NetworkMgr.connectivityCheck = offline
+    NetworkMgr.scheduleConnectivityCheck = offline
+    NetworkMgr.enableWifi = offline
+    NetworkMgr.disableWifi = offline
+    NetworkMgr.toggleWifiOn = offline
+    NetworkMgr.toggleWifiOff = offline
+    NetworkMgr.promptWifiOn = offline
+    NetworkMgr.promptWifiOff = offline
+    NetworkMgr.promptWifi = offline
+    NetworkMgr.beforeWifiAction = offline
+    NetworkMgr.afterWifiAction = offline
+    NetworkMgr.turnOnWifiAndWaitForConnection = offline
+    NetworkMgr.doNothingAndWaitForConnection = offline
+    NetworkMgr.runWhenOnline = offline
+    NetworkMgr.runWhenConnected = offline
+    NetworkMgr.willRerunWhenOnline = should_abort
+    NetworkMgr.willRerunWhenConnected = should_abort
+    NetworkMgr.goOnlineToRun = offline
+    NetworkMgr.setHTTPProxy = offline
+    NetworkMgr.canResolveHostnames = offline
+    NetworkMgr.hasDefaultRoute = offline
+    NetworkMgr.setWirelessBackend = offline
+    NetworkMgr.reconnectOrShowNetworkMenu = offline
+    NetworkMgr.restoreWifiAsync = offline
+    NetworkMgr.getNetworkInterfaceName = function() return nil end
+    NetworkMgr.queryNetworkState = function(self)
+        self.is_wifi_on = false
+        self.is_connected = false
+        self.pending_connection = false
+        self.pending_connectivity_check = false
+    end
+    NetworkMgr.getWifiState = offline
+    NetworkMgr.getConnectionState = offline
+    NetworkMgr.setWifiState = function(self) self.is_wifi_on = false end
+    NetworkMgr.setConnectionState = function(self) self.is_connected = false end
+end
+
 local UbuntuTouch = Device:extend{
     model = "UbuntuTouch",
     hasFrontlight = yes,
@@ -169,21 +285,25 @@ local UbuntuTouch = Device:extend{
 }
 
 function Device:init()
-    -- allows to set a viewport via environment variable
-    -- syntax is Lua table syntax, e.g. EMULATE_READER_VIEWPORT="{x=10,w=550,y=5,h=790}"
-    local viewport = os.getenv("EMULATE_READER_VIEWPORT")
-    if viewport then
-        self.viewport = require("ui/geometry"):new(loadstring("return " .. viewport)())
-    end
+    local portrait
+    -- Hardened iOS ignores emulator-controlled environment input.
+    if not self:isHardenedOffline() then
+        -- allows to set a viewport via environment variable
+        -- syntax is Lua table syntax, e.g. EMULATE_READER_VIEWPORT="{x=10,w=550,y=5,h=790}"
+        local viewport = os.getenv("EMULATE_READER_VIEWPORT")
+        if viewport then
+            self.viewport = require("ui/geometry"):new(loadstring("return " .. viewport)())
+        end
 
-    local touchless = os.getenv("DISABLE_TOUCH") == "1"
-    if touchless then
-        self.isTouchDevice = no
-    end
+        local touchless = os.getenv("DISABLE_TOUCH") == "1"
+        if touchless then
+            self.isTouchDevice = no
+        end
 
-    local portrait = os.getenv("EMULATE_READER_FORCE_PORTRAIT")
-    if portrait then
-        self.isAlwaysPortrait = yes
+        portrait = os.getenv("EMULATE_READER_FORCE_PORTRAIT")
+        if portrait then
+            self.isAlwaysPortrait = yes
+        end
     end
 
     self.hasClipboard = yes
@@ -503,7 +623,9 @@ function Emulator:initNetworkManager(NetworkMgr)
 end
 
 -------------- device probe ------------
-if os.getenv("APPIMAGE") then
+if os.getenv("KO_IOS") == "1" then
+    return IOS
+elseif os.getenv("APPIMAGE") then
     return AppImage
 elseif os.getenv("FLATPAK") then
     return Flatpak

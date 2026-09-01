@@ -1,5 +1,6 @@
 local BD = require("ui/bidi")
 local ButtonDialog = require("ui/widget/buttondialog")
+local Device = require("device")
 local DictQuickLookup = require("ui/widget/dictquicklookup")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
@@ -41,7 +42,11 @@ local FileManagerShortcuts = WidgetContainer:extend{
                 return filemanagerutil.getHomeFolder()
             end,
             set = function(path)
-                G_reader_settings:saveSetting("home_dir", path)
+                if Device:isHardenedOffline() then
+                    G_reader_settings:saveSetting("home_dir", filemanagerutil.getDefaultDir())
+                else
+                    G_reader_settings:saveSetting("home_dir", path)
+                end
             end,
         },
         download_dir = {
@@ -56,10 +61,17 @@ local FileManagerShortcuts = WidgetContainer:extend{
         screenshot_dir = {
             name = _("Screenshot folder"),
             get = function()
+                if Device:isHardenedOffline() then
+                    return Screenshoter:getScreenshotDir()
+                end
                 return G_reader_settings:readSetting("screenshot_dir") or Screenshoter.default_dir
             end,
             set = function(path)
-                G_reader_settings:saveSetting("screenshot_dir", path)
+                if Device:isHardenedOffline() then
+                    G_reader_settings:delSetting("screenshot_dir")
+                else
+                    G_reader_settings:saveSetting("screenshot_dir", path)
+                end
             end,
         },
         wikipedia_save_dir = {
@@ -241,26 +253,28 @@ end
 function FileManagerShortcuts:updateItemTable()
     local item_table = {}
     for folder, shortcut in pairs(self.folder_shortcuts) do
-        if shortcut.text then -- user shortcut
-            local name = shortcut.text
-            table.insert(item_table, {
-                text = self.settings.show_path == false and name or string.format("%s (%s)", name, BD.dirpath(folder)),
-                folder = folder,
-                name = name,
-            })
-        end
-        if shortcut.providers then
-            for provider in pairs(shortcut.providers) do
-                local provider_props = FileManagerShortcuts.provider_props[provider]
-                if provider_props then
-                    table.insert(item_table, {
-                        text = provider_props.name,
-                        folder = folder,
-                        name = provider_props.name,
-                        provider = provider,
-                        mandatory = self.settings.show_type ~= false and (provider == "home_dir" and "\u{f015}" -- 'home'
-                            or (provider_props.is_plugin and "\u{E20F}" or "\u{F013}")), -- 'tools' or 'cog'
-                    })
+        if filemanagerutil.isPathInsideHome(folder) then
+            if shortcut.text then -- user shortcut
+                local name = shortcut.text
+                table.insert(item_table, {
+                    text = self.settings.show_path == false and name or string.format("%s (%s)", name, BD.dirpath(folder)),
+                    folder = folder,
+                    name = name,
+                })
+            end
+            if shortcut.providers then
+                for provider in pairs(shortcut.providers) do
+                    local provider_props = FileManagerShortcuts.provider_props[provider]
+                    if provider_props then
+                        table.insert(item_table, {
+                            text = provider_props.name,
+                            folder = folder,
+                            name = provider_props.name,
+                            provider = provider,
+                            mandatory = self.settings.show_type ~= false and (provider == "home_dir" and "\u{f015}" -- 'home'
+                                or (provider_props.is_plugin and "\u{E20F}" or "\u{F013}")), -- 'tools' or 'cog'
+                        })
+                    end
                 end
             end
         end
@@ -320,7 +334,7 @@ function FileManagerShortcuts:onMenuHold(item)
         },
     }
     local ui = self._manager.ui
-    if ui.file_chooser then
+    if ui.file_chooser and not Device:isHardenedOffline() then
         if ui.clipboard then
             table.insert(buttons, {}) -- separator
             table.insert(buttons, {

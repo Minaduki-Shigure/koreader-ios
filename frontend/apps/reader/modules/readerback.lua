@@ -176,6 +176,10 @@ function ReaderBack:onBack()
     end
 
     -- location stack empty, or back_in_reader == "default"
+    if Device:isHardenedOffline() then
+        self.ui:handleEvent(Event:new("Home"))
+        return true
+    end
     if back_to_exit == "always" then
         self.ui:handleEvent(Event:new("Close"))
     elseif back_to_exit == "disable" then

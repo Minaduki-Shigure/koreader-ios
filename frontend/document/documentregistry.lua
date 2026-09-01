@@ -3,6 +3,7 @@ This is a registry for document providers
 ]]--
 
 local DocSettings = require("docsettings")
+local DocumentPathPolicy = require("document/documentpathpolicy")
 local logger = require("logger")
 local util = require("util")
 
@@ -227,6 +228,13 @@ end
 
 --- Returns a new Document instance on success
 function DocumentRegistry:openDocument(file, provider)
+    local resolved_file = DocumentPathPolicy:resolveDocument(file)
+    if not resolved_file then
+        logger.warn("DocumentRegistry: refusing document outside the hardened Books boundary", file)
+        return
+    end
+    file = resolved_file
+
     -- force a GC, so that any previous document used memory can be reused
     -- immediately by this new document without having to wait for the
     -- next regular gc. The second call may help reclaming more memory.

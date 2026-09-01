@@ -9,6 +9,16 @@ local util = require("util")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 
+local hardened_offline = os.getenv("KO_HARDENED_OFFLINE") == "1"
+local SafeSettings = hardened_offline and require("safesettings")
+
+local function loadWritableDefaults(path)
+    if hardened_offline then
+        return SafeSettings.loadTable(path)
+    end
+    return pcall(dofile, path)
+end
+
 local LuaDefaults = LuaSettings:extend{
     ro = nil, -- will contain the defaults.lua k/v pairs (const)
     rw = nil, -- will only contain non-defaults user-modified k/v pairs
@@ -26,13 +36,13 @@ function LuaDefaults:open(path)
     -- so logger.warn() only if there was an existing file
     local existing = lfs.attributes(new.file, "mode") == "file"
 
-    ok, stored = pcall(dofile, new.file)
+    ok, stored = loadWritableDefaults(new.file)
     if ok and stored then
         new.rw = stored
     else
         if existing then logger.warn("LuaDefaults: Failed reading", new.file, "(probably corrupted).") end
         -- Fallback to .old if it exists
-        ok, stored = pcall(dofile, new.file..".old")
+        ok, stored = loadWritableDefaults(new.file..".old")
         if ok and stored then
             if existing then logger.warn("LuaDefaults: read from backup file", new.file..".old") end
             new.rw = stored

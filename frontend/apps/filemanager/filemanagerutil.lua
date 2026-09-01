@@ -8,6 +8,7 @@ local CheckButton = require("ui/widget/checkbutton")
 local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
 local DocSettings = require("docsettings")
+local DocumentPathPolicy = require("document/documentpathpolicy")
 local Event = require("ui/event")
 local UIManager = require("ui/uimanager")
 local ffiUtil = require("ffi/util")
@@ -18,12 +19,63 @@ local T = ffiUtil.template
 
 local filemanagerutil = {}
 
+function filemanagerutil.isPathInsideHome(path)
+    return DocumentPathPolicy:isPathInsideBooks(path)
+end
+
+function filemanagerutil.isHomeRoot(path)
+    return DocumentPathPolicy:isBooksRoot(path)
+end
+
+function filemanagerutil.constrainToHome(path)
+    return DocumentPathPolicy:constrainToBooks(path)
+end
+
 function filemanagerutil.getDefaultDir()
+    if Device:isHardenedOffline() then
+        return DocumentPathPolicy:getBooksRoot()
+    end
     return Device.home_dir or "."
 end
 
 function filemanagerutil.getHomeFolder()
+    if Device:isHardenedOffline() then
+        return DocumentPathPolicy:getBooksRoot()
+    end
     return G_reader_settings:readSetting("home_dir") or Device.home_dir or "."
+end
+
+function filemanagerutil.resolveDocumentPath(path, show_error)
+    local resolved_path = DocumentPathPolicy:resolveDocument(path)
+    if not resolved_path and show_error then
+        local InfoMessage = require("ui/widget/infomessage")
+        UIManager:show(InfoMessage:new{
+            text = _("This hardened build can only open documents from Books."),
+        })
+    end
+    return resolved_path
+end
+
+function filemanagerutil.resolveMutablePath(path, show_error)
+    local resolved_path = DocumentPathPolicy:resolveMutablePath(path)
+    if not resolved_path and show_error then
+        local InfoMessage = require("ui/widget/infomessage")
+        UIManager:show(InfoMessage:new{
+            text = _("This hardened build can only modify files in Books."),
+        })
+    end
+    return resolved_path
+end
+
+function filemanagerutil.resolveWritePath(path, show_error)
+    local resolved_path = DocumentPathPolicy:resolveWritePath(path)
+    if not resolved_path and show_error then
+        local InfoMessage = require("ui/widget/infomessage")
+        UIManager:show(InfoMessage:new{
+            text = _("This hardened build can only write files in Books."),
+        })
+    end
+    return resolved_path
 end
 
 function filemanagerutil.abbreviate(path)
@@ -331,6 +383,7 @@ function filemanagerutil.genExecuteScriptButton(file, caller_callback)
     return {
         -- @translators This is the script's programming language (e.g., shell or python)
         text = T(_("Execute %1 script"), util.getScriptType(file)),
+        enabled = not Device:isHardenedOffline(),
         callback = function()
             filemanagerutil.executeScript(file, caller_callback)
         end,
@@ -338,6 +391,7 @@ function filemanagerutil.genExecuteScriptButton(file, caller_callback)
 end
 
 function filemanagerutil.executeScript(file, caller_callback)
+    if Device:isHardenedOffline() then return false end
     if caller_callback then
         caller_callback()
     end
@@ -440,6 +494,9 @@ function filemanagerutil.showChooseDialog(title_header, caller_callback, current
 end
 
 function filemanagerutil.openFile(ui, file, caller_pre_callback, no_dialog)
+    file = filemanagerutil.resolveDocumentPath(file, true)
+    if not file then return end
+
     local openFile = function()
         if caller_pre_callback then
             caller_pre_callback()

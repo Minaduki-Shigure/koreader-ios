@@ -301,6 +301,9 @@ function ReaderBookmark:addToMainMenu(menu_items)
             },
         },
     }
+    if Device:isHardenedOffline() then
+        table.remove(menu_items.bookmarks_settings.sub_item_table)
+    end
     menu_items.bookmark_search = {
         text = _("Bookmark search"),
         enabled_func = function()

@@ -31,18 +31,20 @@ end
 
 function FileManagerHistory:fetchStatuses(count)
     for _, v in ipairs(require("readhistory").hist) do
-        local status
-        if v.dim then -- deleted file
-            status = "deleted"
-        elseif v.file == (self.ui.document and self.ui.document.file) then -- currently opened file
-            status = self.ui.doc_settings:readSetting("summary").status
-        else
-            status = BookList.getBookStatus(v.file)
+        if filemanagerutil.isPathInsideHome(v.file) then
+            local status
+            if v.dim then -- deleted file
+                status = "deleted"
+            elseif v.file == (self.ui.document and self.ui.document.file) then -- currently opened file
+                status = self.ui.doc_settings:readSetting("summary").status
+            else
+                status = BookList.getBookStatus(v.file)
+            end
+            if count then
+                self.count[status] = self.count[status] + 1
+            end
+            v.status = status
         end
-        if count then
-            self.count[status] = self.count[status] + 1
-        end
-        v.status = status
     end
     self.statuses_fetched = true
 end
@@ -98,11 +100,15 @@ function FileManagerHistory:onShowHist(search_info)
 end
 
 function FileManagerHistory:updateItemTable()
-    self.count = { all = #require("readhistory").hist,
+    self.count = { all = 0,
         reading = 0, abandoned = 0, complete = 0, deleted = 0, new = 0, }
     local item_table = {}
     for _, v in ipairs(require("readhistory").hist) do
-        if self:isItemMatch(v) then
+        local path_allowed = filemanagerutil.isPathInsideHome(v.file)
+        if path_allowed then
+            self.count.all = self.count.all + 1
+        end
+        if path_allowed and self:isItemMatch(v) then
             local item = util.tableDeepCopy(v)
             if item.select_enabled and ReadCollection:isFileInCollections(item.file) then
                 item.mandatory = "☆ " .. item.mandatory
@@ -112,7 +118,7 @@ function FileManagerHistory:updateItemTable()
             end
             table.insert(item_table, item)
         end
-        if self.statuses_fetched then
+        if path_allowed and self.statuses_fetched and v.status then
             self.count[v.status] = self.count[v.status] + 1
         end
     end
