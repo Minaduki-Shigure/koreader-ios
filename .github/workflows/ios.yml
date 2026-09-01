@@ -138,6 +138,10 @@ jobs:
 
       - name: Validate app bundle
         run: |
+          exec > >(tee artifacts/logs/validate-bundle.log) 2>&1
+          trap 'status=$?; echo "::error title=Bundle validation failed::${BASH_COMMAND} (exit ${status})"; exit "${status}"' ERR
+          set -x
+
           app="${DERIVED_DATA}/Build/Products/Debug-iphoneos/KOReader.app"
           plist="${app}/Info.plist"
 
