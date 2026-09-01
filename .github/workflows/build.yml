@@ -40,6 +40,7 @@ jobs:
       KODEBUG: ""
       MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
       MAKEFLAGS: OUTPUT_DIR=build PARALLEL_JOBS=${{ matrix.jobs }} INSTALL_DIR=install TARGET=macos
+      AUDITED_PARENT_BASE: 9192014d8bd82a91dc1012473be0f238dedfdb54
 
     steps:
 
@@ -109,7 +110,12 @@ jobs:
           show-progress: false
 
       - name: Fetch
-        run: make fetchthirdparty
+        run: |
+          git fetch --no-tags https://github.com/koreader/koreader.git \
+            refs/tags/v2026.07.1:refs/tags/v2026.07.1
+          test "$(git rev-parse 'refs/tags/v2026.07.1^{}')" = \
+            "${AUDITED_PARENT_BASE}"
+          make fetchthirdparty
 
       # }}}
 

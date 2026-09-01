@@ -263,7 +263,7 @@ function PluginLoader:_load(t)
     local package_cpath = package.cpath
 
     local mainfile, metafile, plugin_root, disabled
-    for _, v in ipairs(t) do
+    for _index, v in ipairs(t) do
         mainfile = v.main
         metafile = v.meta
         plugin_root = v.path
