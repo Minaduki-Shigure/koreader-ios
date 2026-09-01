@@ -206,29 +206,19 @@ jobs:
           key: ${{ steps.build-restore.outputs.cache-primary-key }}
 
       - name: Test hardened settings loader
-        if: ${{ hashFiles('spec/unit/safesettings_spec.lua') != '' }}
         run: >
           ./base/utils/fake_tty.py make --assume-old=base testfront
           T=spec/unit/safesettings_spec.lua
 
       - name: Test hardened iOS data boundaries
-        if: ${{ hashFiles('spec/unit/docsettings_hardened_ios_spec.lua') != '' && hashFiles('spec/unit/writable_lua_hardened_ios_spec.lua') != '' }}
         run: |
-          hardened_home="${RUNNER_TEMP}/koreader-hardened-data"
-          hardened_books="${RUNNER_TEMP}/koreader-hardened-books"
-          mkdir -p "${hardened_home}" "${hardened_books}"
-
-          run_hardened_spec() {
-            KO_HARDENED_OFFLINE=1 \
-            KO_IOS=1 \
-            KO_HOME="${hardened_home}" \
-            KO_BOOKS_HOME="${hardened_books}" \
-              ./base/utils/fake_tty.py make --assume-old=base testfront \
-                T="$1"
-          }
-
-          run_hardened_spec spec/unit/docsettings_hardened_ios_spec.lua
-          run_hardened_spec spec/unit/writable_lua_hardened_ios_spec.lua
+          hardened_runner="${PWD}/platform/ios/run-hardened-front-tests.sh"
+          for spec in \
+            spec/unit/docsettings_hardened_ios_spec.lua \
+            spec/unit/writable_lua_hardened_ios_spec.lua; do
+            ./base/utils/fake_tty.py make --assume-old=base testfront \
+              RUNTESTS="${hardened_runner}" T="${spec}"
+          done
 
       - name: Test
         id: testfront
