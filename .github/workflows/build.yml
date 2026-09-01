@@ -206,18 +206,26 @@ jobs:
           key: ${{ steps.build-restore.outputs.cache-primary-key }}
 
       - name: Test hardened settings loader
-        run: >
-          ./base/utils/fake_tty.py make --assume-old=base testfront
-          T=spec/unit/safesettings_spec.lua
+        run: |
+          mkdir -p artifacts/logs
+          set -o pipefail
+          targeted_runner="${PWD}/platform/ios/run-targeted-front-tests.sh"
+          ./base/utils/fake_tty.py make --assume-old=base testfront \
+            RUNTESTS="${targeted_runner}" T=spec/front/unit/safesettings_spec.lua \
+            2>&1 | tee artifacts/logs/safesettings.log
 
       - name: Test hardened iOS data boundaries
         run: |
+          mkdir -p artifacts/logs
+          set -o pipefail
           hardened_runner="${PWD}/platform/ios/run-hardened-front-tests.sh"
           for spec in \
-            spec/unit/docsettings_hardened_ios_spec.lua \
-            spec/unit/writable_lua_hardened_ios_spec.lua; do
+            spec/front/unit/docsettings_hardened_ios_spec.lua \
+            spec/front/unit/filemanagerutil_ios_spec.lua \
+            spec/front/unit/writable_lua_hardened_ios_spec.lua; do
             ./base/utils/fake_tty.py make --assume-old=base testfront \
-              RUNTESTS="${hardened_runner}" T="${spec}"
+              RUNTESTS="${hardened_runner}" T="${spec}" \
+              2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
           done
 
       - name: Test
@@ -241,12 +249,12 @@ jobs:
           fi
 
       - name: Upload frontend test failure
-        if: ${{ failure() && steps.testfront.conclusion == 'failure' }}
+        if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: frontend-test-failure-${{ matrix.platform }}-${{ github.sha }}
-          path: artifacts/logs/testfront.log
-          if-no-files-found: error
+          path: artifacts/logs
+          if-no-files-found: warn
           retention-days: 7
 
       # Generate / upload artifact. {{{

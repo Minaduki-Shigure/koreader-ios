@@ -23,7 +23,7 @@ jobs:
   ios:
     name: iOS arm64 / Xcode 16.4
     runs-on: macos-15
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       CLICOLOR_FORCE: "1"
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -35,7 +35,7 @@ jobs:
       IOS_PLATFORM: iphoneos
       PARALLEL_JOBS: "4"
       AUDITED_PARENT_BASE: 9192014d8bd82a91dc1012473be0f238dedfdb54
-      PINNED_BASE_COMMIT: 41392198effc10e5e96e84f9d90d14bbec548048
+      PINNED_BASE_COMMIT: 172c9f5533a498707e617fa4f44d08777b19c488
       DERIVED_DATA: build/DerivedData
 
     steps:
@@ -83,6 +83,7 @@ jobs:
             nasm
             ninja
             pkgconf
+            sdl3
             util-linux
             xcodegen
           )
@@ -112,6 +113,36 @@ jobs:
           test "$(git -C base rev-parse HEAD)" = "${PINNED_BASE_COMMIT}"
           ./platform/ios/check-source-invariants.sh | \
             tee artifacts/logs/source-invariants.log
+          ./platform/ios/test-macho-closure.sh | \
+            tee artifacts/logs/macho-closure-tests.log
+
+      - name: Run release-gating frontend tests
+        run: |
+          set -o pipefail
+          targeted_runner="${PWD}/platform/ios/run-targeted-front-tests.sh"
+          hardened_runner="${PWD}/platform/ios/run-hardened-front-tests.sh"
+          host_make=(
+            make
+            TARGET=macos
+            OUTPUT_DIR=build/host
+            INSTALL_DIR=install/host
+            PARALLEL_JOBS="${PARALLEL_JOBS}"
+            testfront
+          )
+
+          "${host_make[@]}" RUNTESTS="${targeted_runner}" \
+            T=spec/front/unit/safesettings_spec.lua 2>&1 | \
+            tee artifacts/logs/safesettings.log
+
+          for spec in \
+            spec/front/unit/docsettings_hardened_ios_spec.lua \
+            spec/front/unit/filemanagerutil_ios_spec.lua \
+            spec/front/unit/writable_lua_hardened_ios_spec.lua; do
+            "${host_make[@]}" RUNTESTS="${hardened_runner}" T="${spec}" \
+              2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
+          done
+
+          "${host_make[@]}" 2>&1 | tee artifacts/logs/testfront.log
 
       - name: Generate Xcode project
         run: |
@@ -246,8 +277,11 @@ jobs:
           LC_ALL=C sort -u -o artifacts/macho-undefined-symbols.txt \
             artifacts/macho-undefined-symbols.txt
 
+          ./platform/ios/check-macho-closure.sh "${app}" | \
+            tee artifacts/macho-closure.txt
+
           if grep -Ei \
-              'lib(curl|ssl|crypto|tls|luasocket|luasec|zmq|czmq)|/(CF)?Network\.framework/' \
+              'lib(curl|ssl|crypto|tls|luasocket|luasec|zmq|czmq|gio|glib|gmodule|gobject)|/(CF)?Network\.framework/' \
               artifacts/macho-dependencies.txt; then
             echo "::error title=Forbidden network dependency::A Mach-O links a network or TLS library"
             exit 1
@@ -310,7 +344,24 @@ jobs:
             }
             END { exit bad }
           '
-          shasum -a 256 "${ipa}" | tee artifacts/ipa-sha256.txt
+          verify_root="${RUNNER_TEMP}/koreader-ipa-verification"
+          mkdir -p "${verify_root}"
+          unzip -q "${ipa}" -d "${verify_root}"
+          extracted_app="${verify_root}/Payload/KOReader.app"
+          ./platform/ios/check-bundle-invariants.sh "${extracted_app}/app"
+          ./platform/ios/check-macho-closure.sh "${extracted_app}" | \
+            tee artifacts/logs/ipa-macho-closure.log
+          if find "${extracted_app}" -type l -print -quit | grep -q .; then
+            echo "error: packaged IPA contains a symbolic link" >&2
+            exit 1
+          fi
+          cmp "${app}/KOReader" "${extracted_app}/KOReader"
+
+          (
+            cd "$(dirname "${ipa}")"
+            shasum -a 256 "$(basename "${ipa}")" >ipa-sha256.txt
+          )
+          cat artifacts/ipa-sha256.txt
 
       - name: Upload unsigned IPA and verification evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
