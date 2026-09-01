@@ -17,7 +17,21 @@
       "localizedDescription": "支持 EPUB、PDF、DjVu、FB2、MOBI、CBZ 等格式。文档通过系统文件选择器复制到应用私有存储；网络、云服务、在线更新、用户补丁和可写插件执行均已移除。此 iOS 端口仍处于实验阶段。",
       "iconURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-release/platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png",
       "tintColor": "#00AFA7",
-      "versions": []
+      "versions": [
+        {
+          "version": "2026.7.1",
+          "date": "2026-09-01",
+          "localizedDescription": "KOReader 2026.7.1 严格离线 iOS 移植的首个公开测试版。已通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
+          "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-v2026.7.1-b2/KOReader-Strict-Offline-SideStore.ipa",
+          "size": 77843079,
+          "minOSVersion": "14.0"
+        }
+      ],
+      "version": "2026.7.1",
+      "versionDate": "2026-09-01",
+      "versionDescription": "KOReader 2026.7.1 严格离线 iOS 移植的首个公开测试版。已通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
+      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-v2026.7.1-b2/KOReader-Strict-Offline-SideStore.ipa",
+      "size": 77843079
     }
   ],
   "news": []
