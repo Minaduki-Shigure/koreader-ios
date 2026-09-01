@@ -30,6 +30,39 @@ credentials. SideStore signs that IPA using the account configured on the
 device. Direct Xcode installation is also supported: select a free personal
 team or a paid Apple Developer team under **Signing & Capabilities**.
 
+### Published SideStore / LiveContainer source
+
+The maintained source URL is:
+
+```text
+https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-release/sidestore-source.json
+```
+
+In LiveContainer 3.7 or newer, open **Sources**, add the URL, and install
+KOReader from that listing. This imports KOReader as a LiveContainer guest. A
+shortcut using LiveContainer's documented URL scheme is also available after
+LiveContainer is installed:
+
+```text
+livecontainer://sources?url=https%3A%2F%2Fraw.githubusercontent.com%2FMinaduki-Shigure%2Fkoreader-ios%2Frefs%2Fheads%2Fios-release%2Fsidestore-source.json
+```
+
+Adding the same URL to SideStore instead installs KOReader as a normal
+standalone sideloaded app. The corresponding SideStore shortcut is:
+
+```text
+sidestore://source?url=https%3A%2F%2Fraw.githubusercontent.com%2FMinaduki-Shigure%2Fkoreader-ios%2Frefs%2Fheads%2Fios-release%2Fsidestore-source.json
+```
+
+The Release IPA is intentionally unsigned. Do not pre-sign or patch it before
+importing it into LiveContainer; LiveContainer performs its own guest patching
+and recursively signs the guest Mach-O files in JIT-less mode. On iOS 18, first
+import or refresh the certificate from SideStore in LiveContainer, then install
+KOReader from LiveContainer's Sources page.
+
+The source format is shared by classic SideStore and LiveContainer. It does not
+declare `marketplaceID`, `Build`, or other AltStore PAL notarization fields.
+
 ### Homebrew packages
 
 Install everything in one command:
@@ -132,6 +165,43 @@ The repository's `iOS strict-offline build` GitHub Actions workflow performs
 the same device build and uploads the unsigned IPA together with its SHA-256
 and validation evidence. Packaging happens only after the source and final app
 bundle satisfy the strict-offline checks.
+
+## Publishing a source release
+
+`platform/ios/release.json` is the single source of truth for the public app
+version, build number, release notes, and iOS release tag; it also records the
+audited upstream KOReader tag. Before the
+first release, enable **Settings > General > Releases > Enable release
+immutability** and set **Settings > Actions > General > Workflow permissions**
+to **Read and write permissions**. Immutability only applies to releases made
+after that repository setting is enabled, and the workflow refuses to add a
+mutable Release to the source.
+
+To prepare a new release:
+
+1. Start from the current `ios-release` branch after its latest source update.
+2. Update every field in `platform/ios/release.json`. Both
+   `marketingVersion` and the positive integer `buildVersion` must increase.
+3. Commit and push the candidate, then wait for the full macOS and iOS workflows
+   to pass.
+4. Tag that exact commit with the `releaseTag` from the metadata and push the
+   tag. Do not reuse or move a published tag.
+
+For an iOS-only maintenance release on the same audited upstream base, these
+metadata fields are sufficient. Upgrading the upstream KOReader version also
+requires a fresh audit and updates to `IOS_UPSTREAM_TAG`,
+`AUDITED_PARENT_BASE`, and `PINNED_BASE_COMMIT` in the workflows.
+
+The tag workflow builds and validates the unsigned IPA, creates a draft GitHub
+Release, verifies the uploaded asset's byte size and SHA-256, publishes the
+Release, and only then appends the version to `sidestore-source.json`. The final
+job fetches both public URLs and repeats the size and digest checks. A failed
+build or incomplete Release therefore cannot become the latest source entry.
+
+Do not hand-edit published version entries or replace a Release asset. Classic
+AltSources identify updates using `CFBundleShortVersionString`, so every public
+release needs a new `marketingVersion`, even when it still uses the same
+upstream KOReader tag.
 
 ## Strict-offline behavior
 

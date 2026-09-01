@@ -14,6 +14,16 @@
 > upstream feature list below describes KOReader generally; online integrations
 > are not present in this iOS package.
 >
+> Published unsigned builds are available from the shared SideStore/
+> LiveContainer source:
+>
+> `https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-release/sidestore-source.json`
+>
+> Add that URL under **Sources** in LiveContainer to install KOReader as a
+> LiveContainer guest. Adding it to SideStore installs KOReader as a standalone
+> sideloaded app instead. The source targets arm64 devices running iOS/iPadOS
+> 14 or newer and is not an AltStore PAL notarized marketplace source.
+>
 > ```sh
 > make TARGET=ios xcodeproj
 > ```

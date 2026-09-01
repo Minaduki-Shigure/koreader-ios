@@ -1,0 +1,24 @@
+{
+  "name": "KOReader iOS Strict Offline",
+  "identifier": "io.github.minaduki-shigure.koreader-ios.source",
+  "sourceURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-release/sidestore-source.json",
+  "subtitle": "严格离线的 iPhone 和 iPad 阅读器",
+  "description": "KOReader 的实验性严格离线 iOS 移植。发布包仅包含 arm64 设备代码，不包含网络、云服务、在线更新或可写插件执行路径。IPA 未签名，由 LiveContainer 或 SideStore 在设备上完成签名。",
+  "iconURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-release/platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png",
+  "website": "https://github.com/Minaduki-Shigure/koreader-ios",
+  "tintColor": "#00AFA7",
+  "apps": [
+    {
+      "beta": false,
+      "name": "KOReader",
+      "bundleIdentifier": "rocks.koreader.ios",
+      "developerName": "KOReader contributors and Minaduki-Shigure",
+      "subtitle": "严格离线的开源文档阅读器",
+      "localizedDescription": "支持 EPUB、PDF、DjVu、FB2、MOBI、CBZ 等格式。文档通过系统文件选择器复制到应用私有存储；网络、云服务、在线更新、用户补丁和可写插件执行均已移除。此 iOS 端口仍处于实验阶段。",
+      "iconURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-release/platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png",
+      "tintColor": "#00AFA7",
+      "versions": []
+    }
+  ],
+  "news": []
+}

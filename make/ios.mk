@@ -1,5 +1,4 @@
 IOS_DIR = $(PLATFORM_DIR)/ios
-IOS_MARKETING_VERSION ?= v2026.07.1
 
 define UPDATE_PATH_EXCLUDES +=
 plugins/SSH.koplugin
@@ -15,7 +14,7 @@ ios-check-prereqs:
 	@$(CURDIR)/platform/ios/check-prereqs.sh
 
 ios-info-plist:
-	@$(CURDIR)/platform/ios/generate-info-plist.sh $(IOS_MARKETING_VERSION)
+	@$(CURDIR)/platform/ios/generate-info-plist.sh
 
 ios-source-check:
 	@$(CURDIR)/platform/ios/check-source-invariants.sh

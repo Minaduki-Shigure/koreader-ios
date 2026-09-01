@@ -8,6 +8,7 @@ LOADER="${PLATFORM_DIR}/ios_loader.m"
 PICKER="${PLATFORM_DIR}/ios_filepicker.m"
 PLIST="${PLATFORM_DIR}/Info.plist.in"
 PROJECT="${PLATFORM_DIR}/project.yml"
+RELEASE_METADATA="${PLATFORM_DIR}/release.json"
 COVER_BROWSER="${REPO_ROOT}/plugins/coverbrowser.koplugin/bookinfomanager.lua"
 IMPORT_PLUGIN="${REPO_ROOT}/plugins/iosimporter.koplugin/main.lua"
 PLUGIN_LOADER="${REPO_ROOT}/frontend/pluginloader.lua"
@@ -145,6 +146,32 @@ if ! grep -A1 -F '<key>LSSupportsOpeningDocumentsInPlace</key>' "${PLIST}" | gre
     exit 1
 fi
 reject_source "${PLIST}" '<key>CFBundleDocumentTypes</key>'
+require_source "${PLIST}" '<string>@VERSION@</string>'
+require_source "${PLIST}" '<string>@BUILD_VERSION@</string>'
+
+ruby -rjson -e '
+  metadata = JSON.parse(File.read(ARGV.fetch(0)))
+  expected_keys = %w[
+    buildVersion channel localizedDescription marketingVersion releaseTag upstreamTag
+  ]
+  abort "release.json keys do not match the release schema" unless metadata.keys.sort == expected_keys
+
+  version = metadata.fetch("marketingVersion")
+  build = metadata.fetch("buildVersion")
+  upstream = metadata.fetch("upstreamTag")
+  release = metadata.fetch("releaseTag")
+  channel = metadata.fetch("channel")
+  description = metadata.fetch("localizedDescription")
+
+  abort "invalid marketingVersion" unless version.match?(/\A\d+\.\d+\.\d+\z/)
+  abort "invalid buildVersion" unless build.match?(/\A[1-9]\d*\z/)
+  abort "invalid upstreamTag" unless upstream.match?(/\Av\d{4}\.\d{2}(?:\.\d+)?\z/)
+  abort "releaseTag must encode marketingVersion and buildVersion" unless
+    release == "ios-v#{version}-b#{build}"
+  abort "unsupported release channel" unless %w[beta stable].include?(channel)
+  abort "invalid localizedDescription" unless description.is_a?(String) &&
+    !description.empty? && description == description.strip
+' "${RELEASE_METADATA}"
 
 # Every native bridge function called through ffi.C remains explicitly exported.
 require_source "${PROJECT}" '_ko_ios_import_document_start'
