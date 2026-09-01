@@ -1,12 +1,18 @@
 [![KOReader](https://raw.githubusercontent.com/koreader/koreader.github.io/master/koreader-logo.png)](https://koreader.rocks)
 
-> ## Experimental iOS / iPadOS port
+> ## Hardened strict-offline iOS / iPadOS port
 >
 > This branch carries an experimental iPhone and iPad target. It produces an
 > unsigned device build suitable for external signing tools such as SideStore,
 > or an Xcode project for locally signed development builds. The current port
 > is device-only (`arm64`) and uses LuaJIT in interpreter-only mode because the
 > iOS sandbox does not permit JIT memory mappings.
+>
+> The iOS package is deliberately offline-only. It imports documents by copying
+> them into private app storage and omits networking, cloud, OTA update,
+> writable plugin, user-patch, and document-sidecar execution paths. The
+> upstream feature list below describes KOReader generally; online integrations
+> are not present in this iOS package.
 >
 > ```sh
 > make TARGET=ios xcodeproj

@@ -1,4 +1,4 @@
-name: iOS port baseline
+name: iOS strict-offline build
 
 on:
   workflow_dispatch:
@@ -110,6 +110,8 @@ jobs:
           make fetchthirdparty
           git submodule status --recursive | tee artifacts/submodules.txt
           test "$(git -C base rev-parse HEAD)" = "${PINNED_BASE_COMMIT}"
+          ./platform/ios/check-source-invariants.sh | \
+            tee artifacts/logs/source-invariants.log
 
       - name: Generate Xcode project
         run: |
@@ -159,6 +161,9 @@ jobs:
           test -f "${app}/app/libs/libkoreader-monolibtic.dylib"
           test -f "${app}/app/libs/libluajit.dylib"
           test -f "${app}/app/libs/libSDL3.0.dylib"
+          test -f "${app}/app/plugins/iosimporter.koplugin/main.lua"
+
+          ./platform/ios/check-bundle-invariants.sh "${app}/app"
 
           plutil -lint "${plist}"
           test "$(/usr/libexec/PlistBuddy -c \
@@ -169,20 +174,109 @@ jobs:
             'Print :CFBundleShortVersionString' "${plist}")"
           test "${version}" = "2026.7.1"
 
+          test "$(/usr/libexec/PlistBuddy -c \
+            'Print :UIFileSharingEnabled' "${plist}")" = "false"
+          test "$(/usr/libexec/PlistBuddy -c \
+            'Print :LSSupportsOpeningDocumentsInPlace' "${plist}")" = "false"
+
+          reject_plist_key() {
+            local key="$1"
+            if /usr/libexec/PlistBuddy -c "Print :${key}" "${plist}" \
+                >/dev/null 2>&1; then
+              echo "::error title=Forbidden Info.plist key::${key}"
+              return 1
+            fi
+          }
+
+          for key in \
+            CFBundleDocumentTypes \
+            CFBundleURLTypes \
+            UIBackgroundModes \
+            UISupportsDocumentBrowser \
+            NSLocalNetworkUsageDescription \
+            NSBonjourServices \
+            NSAppTransportSecurity; do
+            reject_plist_key "${key}"
+          done
+
+          test "$(plutil -convert json -o - \
+            platform/ios/KOReader.entitlements)" = "{}"
+
           require_arm64 "${app}/KOReader"
           xcrun vtool -show-build "${app}/KOReader"
           otool -L "${app}/KOReader" | tee artifacts/linked-libraries.txt
+
+          printf '%s\n' \
+            _ko_ios_get_safe_area_pixels \
+            _ko_ios_import_document_poll \
+            _ko_ios_import_document_start \
+            >artifacts/expected-main-exports.txt
+          xcrun nm -gjU "${app}/KOReader" | LC_ALL=C sort -u \
+            >artifacts/actual-main-exports.txt
+          cmp artifacts/expected-main-exports.txt \
+            artifacts/actual-main-exports.txt
 
           if find "${app}" -type l -print -quit | grep -q .; then
             echo "error: app bundle contains a symbolic link" >&2
             exit 1
           fi
 
-          while IFS= read -r -d '' binary; do
+          find "${app}" -type f -print0 | while IFS= read -r -d '' file; do
+            if file -b "${file}" | grep -q 'Mach-O'; then
+              printf '%s\n' "${file}"
+            fi
+          done >artifacts/macho-files.txt
+          test -s artifacts/macho-files.txt
+
+          : >artifacts/macho-dependencies.txt
+          : >artifacts/macho-undefined-symbols.txt
+          while IFS= read -r binary; do
             require_arm64 "${binary}"
-            codesign --verify --strict "${binary}"
-          done < <(find "${app}/app" -type f \
-            \( -name '*.dylib' -o -name '*.so' \) -print0)
+            {
+              echo "## ${binary}"
+              otool -L "${binary}"
+            } >>artifacts/macho-dependencies.txt
+            xcrun nm -u "${binary}" 2>/dev/null | awk '{ print $NF }' \
+              >>artifacts/macho-undefined-symbols.txt
+            if [ "${binary}" != "${app}/KOReader" ]; then
+              codesign --verify --strict "${binary}"
+            fi
+          done <artifacts/macho-files.txt
+
+          LC_ALL=C sort -u -o artifacts/macho-undefined-symbols.txt \
+            artifacts/macho-undefined-symbols.txt
+
+          if grep -Ei \
+              'lib(curl|ssl|crypto|tls|luasocket|luasec|zmq|czmq)|/(CF)?Network\.framework/' \
+              artifacts/macho-dependencies.txt; then
+            echo "::error title=Forbidden network dependency::A Mach-O links a network or TLS library"
+            exit 1
+          fi
+
+          forbidden_symbols=(
+            _accept _accept4 _bind _connect _freeaddrinfo _freeifaddrs
+            _getaddrinfo _gethostbyaddr _gethostbyname _gethostbyname2
+            _getifaddrs _getnameinfo _inet_addr _inet_aton _inet_ntoa
+            _inet_ntop _inet_pton _listen _recv _recvfrom _recvmsg
+            _res_query _send _sendmsg _sendto _shutdown _socket _socketpair
+          )
+          for symbol in "${forbidden_symbols[@]}"; do
+            if grep -Fxq "${symbol}" artifacts/macho-undefined-symbols.txt; then
+              echo "::error title=Forbidden network symbol::${symbol}"
+              exit 1
+            fi
+          done
+
+          if codesign -d --entitlements :- "${app}" \
+              >artifacts/app-entitlements.plist \
+              2>artifacts/app-codesign.txt; then
+            plutil -lint artifacts/app-entitlements.plist
+            test "$(plutil -convert json -o - \
+              artifacts/app-entitlements.plist)" = "{}"
+          else
+            printf '%s\n' 'Unsigned app; SideStore supplies the final signature.' \
+              >artifacts/app-entitlements.txt
+          fi
 
           find "${app}" -type f -print | LC_ALL=C sort \
             >artifacts/bundle-files.txt
@@ -193,13 +287,35 @@ jobs:
             xcrun --sdk iphoneos --show-sdk-version
           } >artifacts/build-manifest.txt
 
-      # The strict-offline policy is not complete on this branch yet. Upload
-      # evidence only, never a transitional IPA that could be mistaken for a
-      # release candidate.
-      - name: Upload successful build evidence
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          app="${DERIVED_DATA}/Build/Products/Debug-iphoneos/KOReader.app"
+          ipa_root="${RUNNER_TEMP}/koreader-ipa"
+          ipa="${GITHUB_WORKSPACE}/artifacts/KOReader-${IOS_MARKETING_VERSION}-strict-offline-unsigned.ipa"
+
+          mkdir -p "${ipa_root}/Payload"
+          ditto "${app}" "${ipa_root}/Payload/KOReader.app"
+          (
+            cd "${ipa_root}"
+            /usr/bin/zip -qry "${ipa}" Payload
+          )
+
+          test -s "${ipa}"
+          unzip -t "${ipa}" | tee artifacts/logs/ipa-integrity.log
+          unzip -Z1 "${ipa}" | awk '
+            $0 != "Payload/" && $0 !~ /^Payload\/KOReader\.app\// {
+              print
+              bad = 1
+            }
+            END { exit bad }
+          '
+          shasum -a 256 "${ipa}" | tee artifacts/ipa-sha256.txt
+
+      - name: Upload unsigned IPA and verification evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: koreader-ios-port-evidence-${{ github.sha }}
+          name: koreader-ios-strict-offline-${{ github.sha }}
           path: artifacts
           if-no-files-found: error
           retention-days: 14
@@ -208,7 +324,7 @@ jobs:
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: koreader-ios-port-failure-${{ github.sha }}
+          name: koreader-ios-strict-offline-failure-${{ github.sha }}
           path: artifacts/logs
           if-no-files-found: warn
           retention-days: 7

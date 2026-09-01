@@ -1,8 +1,8 @@
 # Building KOReader for iOS / iPadOS
 
-These instructions cover building KOReader as a sideloadable iOS / iPadOS
-app from a macOS host. The build cross-compiles against the iOS SDK
-shipped with Xcode.
+These instructions cover building the hardened, strict-offline KOReader port
+as a sideloadable iOS / iPadOS app from a macOS host. The build cross-compiles
+against the iOS SDK shipped with Xcode.
 
 For other targets, see [`Building_targets.md`](Building_targets.md). For
 general macOS development setup (the emulator, common prereqs), see
@@ -36,7 +36,7 @@ Install everything in one command:
 
 ```sh
 brew install autoconf automake bash binutils cmake coreutils findutils \
-    gettext gnu-getopt libtool make meson nasm ninja pkgconf sdl3 \
+    gettext gnu-getopt libtool make meson nasm ninja pkgconf \
     util-linux xcodegen
 ```
 
@@ -51,18 +51,18 @@ export PATH="$(brew --prefix)/opt/findutils/libexec/gnubin:$(brew --prefix)/opt/
 Add that line to your shell profile (`~/.zshrc`, `~/.bash_profile`,
 etc.) if you're going to be building often.
 
-### Optional: macOS emulator build
+### Optional: pinned host bytecode compiler
 
-If you build the macOS emulator first, the iOS build can reuse its host
-LuaJIT to precompile the bundled `.lua` files to bytecode at build
-time, knocking 30–50% off cold-launch time on the iOS device:
+If you build the macOS base first, the iOS build can reuse the host LuaJIT
+from the same pinned checkout to precompile bundled `.lua` files. An arbitrary
+`luajit` from `PATH` is deliberately not accepted because incompatible
+bytecode can make the app fail at launch:
 
 ```sh
 make TARGET=macos base
 ```
 
-This is optional — the build skips precompile silently if no host
-LuaJIT is around.
+This is optional. Without that exact host LuaJIT, the build keeps Lua sources.
 
 ## Quick verification
 
@@ -128,6 +128,33 @@ The IPA remains unsigned until SideStore installs it. Do not add signing
 certificates or provisioning profiles to the repository or CI secrets for an
 unsigned build.
 
+The repository's `iOS strict-offline build` GitHub Actions workflow performs
+the same device build and uploads the unsigned IPA together with its SHA-256
+and validation evidence. Packaging happens only after the source and final app
+bundle satisfy the strict-offline checks.
+
+## Strict-offline behavior
+
+- App state lives in `Application Support/KOReader/Data`; imported books live
+  in `Application Support/KOReader/Books`. Both are private app-container
+  locations with iOS data protection enabled.
+- Documents enter through the system picker as copies. File Sharing,
+  open-in-place, document-type launch arguments, persistent provider bookmarks,
+  and external folder access are disabled.
+- File browsing and document launch are confined to the private Books tree,
+  including canonical-path and symlink checks. Legacy history, collections,
+  shortcuts, and startup state cannot reopen paths outside that tree.
+- Networking, TLS, cloud storage, translation, Wikipedia, OPDS/news download,
+  synchronization, SSH, and OTA update payloads and UI entry points are
+  omitted. CI also rejects native network libraries and socket/DNS imports.
+- Only an audited plugin allowlist is packaged. Writable plugins and
+  `userpatch` execution are disabled.
+- Per-document settings are stored under private app data. Imported
+  book-adjacent `.sdr` and legacy Lua sidecars are never executed.
+- Copy, move, and rename operations that depend on external `/bin/cp` or
+  `/bin/mv` processes are unavailable in the first strict build. Private Books
+  import, directory creation, and guarded deletion remain available.
+
 ## What's actually built
 
 - **One main exec** (`KOReader`) — compiled from `platform/ios/ios_loader.m`
@@ -156,12 +183,11 @@ unsigned build.
   reflow itself is non-functional. Plain PDF rendering via mupdf works.
 - **Background extraction can't fork.** iOS sandboxing rejects
   `fork()`. `runInSubProcess` runs work inline on the main thread on
-  iOS, with a `mkstemp`-backed file replacing the pipe for callers that
-  need bidirectional communication.
-- **External document access is transitional.** The Objective-C folder-picker
-  bridge is retained while the platform port is brought up, but the hardened
-  offline distribution uses copy-in through the system document picker rather
-  than retaining security-scoped access to external folders.
+  iOS. A temporary file emulates the one-way child-output pipe; callers asking
+  for a bidirectional subprocess pipe receive an explicit unsupported result.
+- **No direct external document access.** The system document picker copies one
+  supported document at a time into private Books storage. The port does not
+  retain security-scoped access to files or folders owned by other providers.
 - **Simulator builds are untested.** The `IOS_PLATFORM=iphonesimulator`
   parameter exists in `make/ios.mk` but `base/` would need to be
   rebuilt against the simulator SDK — we haven't wired up an XCFramework.
