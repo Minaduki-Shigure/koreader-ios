@@ -22,8 +22,9 @@ fi
 TARGET_DIR="$1"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
-# Locate a host luajit. Prefer the one we built ourselves (same LuaJIT
-# version + features as the iOS target), then fall back to PATH.
+# Locate a host luajit built from this checkout's pinned base submodule. An
+# arbitrary PATH luajit may use an incompatible bytecode format or build
+# configuration and can turn an otherwise valid bundle into a launch crash.
 HOST_LUAJIT=""
 HOST_LUAJIT_SHARE=""
 for machine in arm64-apple-darwin25.0.0 arm64-apple-darwin24.0.0 \
@@ -37,14 +38,9 @@ for machine in arm64-apple-darwin25.0.0 arm64-apple-darwin24.0.0 \
     fi
 done
 if [ -z "${HOST_LUAJIT}" ]; then
-    if command -v luajit >/dev/null 2>&1; then
-        HOST_LUAJIT="$(command -v luajit)"
-        # Hope its jit/ dir is discoverable via default package.path.
-    else
-        echo "[precompile-lua] no host luajit found; skipping precompile." >&2
-        echo "[precompile-lua] run \`make TARGET=macos base\` to build one." >&2
-        exit 0
-    fi
+    echo "[precompile-lua] no pinned host luajit found; keeping Lua sources." >&2
+    echo "[precompile-lua] run \`make TARGET=macos base\` in this checkout to enable precompilation." >&2
+    exit 0
 fi
 
 echo "[precompile-lua] using host luajit: ${HOST_LUAJIT}"

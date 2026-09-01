@@ -8,6 +8,7 @@ set -uo pipefail
 
 missing_brew=()
 notes=()
+missing_system=()
 
 # Detect Homebrew first — almost everything below comes from there.
 if ! command -v brew >/dev/null 2>&1; then
@@ -108,9 +109,9 @@ done
 
 # Xcode + iOS SDK.
 if ! command -v xcrun >/dev/null 2>&1; then
-    notes+=("xcrun not found — install Xcode (or 'xcode-select --install') for the iOS SDK")
+    missing_system+=("xcrun not found - install full Xcode and select it with xcode-select")
 elif ! xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
-    notes+=("Xcode Command-Line Tools alone don't include the iOS SDK; install full Xcode from the App Store")
+    missing_system+=("the selected Xcode does not provide the iPhoneOS SDK")
 fi
 
 # Report.
@@ -145,10 +146,16 @@ if [ ${#notes[@]} -gt 0 ]; then
     done
 fi
 
+if [ ${#missing_system[@]} -gt 0 ]; then
+    for item in "${missing_system[@]}"; do
+        echo "[check-prereqs] ${item}" >&2
+    done
+fi
+
 # Exit non-zero if anything blocking is missing. PATH export issues alone
 # don't block — we just warn — because some users put GNU tools on PATH via
 # different means (asdf, mise, manual install).
-if [ ${#missing_brew[@]} -gt 0 ]; then
+if [ ${#missing_brew[@]} -gt 0 ] || [ ${#missing_system[@]} -gt 0 ]; then
     exit 1
 fi
 
