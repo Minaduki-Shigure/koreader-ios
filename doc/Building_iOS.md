@@ -147,10 +147,16 @@ bundle satisfy the strict-offline checks.
 - Networking, TLS, cloud storage, translation, Wikipedia, OPDS/news download,
   synchronization, SSH, and OTA update payloads and UI entry points are
   omitted. CI also rejects native network libraries and socket/DNS imports.
+- The process-backed StarDict engine is omitted. Local dictionary lookup is
+  unavailable because iOS cannot reliably launch the bundled `sdcv`
+  executable under this sandbox policy.
 - Only an audited plugin allowlist is packaged. Writable plugins and
   `userpatch` execution are disabled.
 - Per-document settings are stored under private app data. Imported
   book-adjacent `.sdr` and legacy Lua sidecars are never executed.
+- Screenshots are forced into private app data. Arbitrary notebook-file paths
+  and custom book-cover files are disabled so stale settings cannot reopen or
+  overwrite files outside the private container.
 - Copy, move, and rename operations that depend on external `/bin/cp` or
   `/bin/mv` processes are unavailable in the first strict build. Private Books
   import, directory creation, and guarded deletion remain available.
@@ -185,6 +191,9 @@ bundle satisfy the strict-offline checks.
   `fork()`. `runInSubProcess` runs work inline on the main thread on
   iOS. A temporary file emulates the one-way child-output pipe; callers asking
   for a bidirectional subprocess pipe receive an explicit unsupported result.
+- **Local dictionary lookup is disabled.** KOReader normally launches `sdcv`
+  as a separate process. The strict build removes that executable and its GLib
+  dependency instead of exposing an action that cannot run reliably on iOS.
 - **No direct external document access.** The system document picker copies one
   supported document at a time into private Books storage. The port does not
   retain security-scoped access to files or folders owned by other providers.
