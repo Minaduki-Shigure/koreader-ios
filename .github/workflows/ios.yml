@@ -247,12 +247,21 @@ jobs:
           otool -L "${app}/KOReader" | tee artifacts/linked-libraries.txt
 
           printf '%s\n' \
+            __mh_execute_header \
             _ko_ios_get_safe_area_pixels \
             _ko_ios_import_document_poll \
             _ko_ios_import_document_start \
             >artifacts/expected-main-exports.txt
           xcrun nm -gjU "${app}/KOReader" | LC_ALL=C sort -u \
+            >artifacts/main-global-defined-symbols.txt
+          xcrun dyld_info -exports "${app}/KOReader" | \
+            tee artifacts/main-export-trie.txt
+          awk '
+            $1 ~ /^0x[[:xdigit:]]+$/ { print $2; next }
+            $1 == "[re-export]" { print $2 }
+          ' artifacts/main-export-trie.txt | LC_ALL=C sort -u \
             >artifacts/actual-main-exports.txt
+          test -s artifacts/actual-main-exports.txt
           cmp artifacts/expected-main-exports.txt \
             artifacts/actual-main-exports.txt
 
