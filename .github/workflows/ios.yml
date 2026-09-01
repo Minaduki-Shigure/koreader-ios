@@ -145,6 +145,17 @@ jobs:
           app="${DERIVED_DATA}/Build/Products/Debug-iphoneos/KOReader.app"
           plist="${app}/Info.plist"
 
+          require_arm64() {
+            local binary="$1"
+            local architectures
+            architectures="$(lipo -archs "${binary}")"
+            echo "${binary}: ${architectures}"
+            if [ "${architectures}" != "arm64" ]; then
+              echo "::error title=Unexpected architecture::${binary}: ${architectures}"
+              return 1
+            fi
+          }
+
           test -x "${app}/KOReader"
           test -f "${app}/app/reader.lua"
           test -f "${app}/app/libs/libkoreader-monolibtic.dylib"
@@ -160,7 +171,7 @@ jobs:
             'Print :CFBundleShortVersionString' "${plist}")"
           test "${version}" = "2026.3.0"
 
-          lipo -verify_arch arm64 "${app}/KOReader"
+          require_arm64 "${app}/KOReader"
           xcrun vtool -show-build "${app}/KOReader"
           otool -L "${app}/KOReader" | tee artifacts/linked-libraries.txt
 
@@ -170,7 +181,7 @@ jobs:
           fi
 
           while IFS= read -r -d '' binary; do
-            lipo -verify_arch arm64 "${binary}"
+            require_arm64 "${binary}"
             codesign --verify --strict "${binary}"
           done < <(find "${app}/app" -type f \
             \( -name '*.dylib' -o -name '*.so' \) -print0)
