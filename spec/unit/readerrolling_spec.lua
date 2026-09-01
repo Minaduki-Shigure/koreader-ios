@@ -228,4 +228,25 @@ describe("Readerrolling module", function()
             ReaderView.onPageUpdate = saved_handler
         end)
     end)
+
+    describe("background rerendering", function()
+        it("uses the reload fallback instead of forking on iOS", function()
+            local ffiutil = require("ffi/util")
+            local original_getenv = os.getenv
+            stub(os, "getenv", function(name)
+                if name == "KO_IOS" then
+                    return "1"
+                end
+                return original_getenv(name)
+            end)
+            stub(ffiutil, "runInSubProcess")
+            finally(function()
+                ffiutil.runInSubProcess:revert()
+                os.getenv:revert()
+            end)
+
+            assert.is_false(rolling:_rerenderInBackground())
+            assert.stub(ffiutil.runInSubProcess).was.called(0)
+        end)
+    end)
 end)

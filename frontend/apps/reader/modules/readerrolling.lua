@@ -1898,6 +1898,14 @@ function ReaderRolling:tearDownRerenderingAutomation()
 end
 
 function ReaderRolling:_rerenderInBackground()
+    -- iOS has no fork(). Let the existing automation take its supported
+    -- "subprocess unavailable" path and do the full render on document reload.
+    -- Running this worker inline would deadlock while it waits for the parent to
+    -- update shared_state[2], because the worker would itself be the main thread.
+    if os.getenv("KO_IOS") == "1" then
+        return false
+    end
+
     Device:enableCPUCores(2)
 
     -- Set up mmap segment to exchange signals between main and sub processes

@@ -156,6 +156,37 @@ end
 -- Setup device
 local Device = require("device")
 
+-- iOS runs LuaJIT in interpreter mode, so there can be a noticeable delay
+-- between creating the SDL window and painting the file browser. Draw a small
+-- splash as soon as the framebuffer exists. Failure is deliberately non-fatal:
+-- the normal UI startup below must remain authoritative.
+if os.getenv("KO_IOS") == "1" then
+    local ok, err = pcall(function()
+        local Blitbuffer = require("ffi/blitbuffer")
+        local RenderImage = require("ui/renderimage")
+        local screen = Device.screen
+        local screen_w, screen_h = screen:getWidth(), screen:getHeight()
+        local logo = RenderImage:renderImageFile("resources/koreader.png", false)
+        if not logo then
+            return
+        end
+
+        local logo_w, logo_h = logo:getWidth(), logo:getHeight()
+        screen.bb:fill(Blitbuffer.COLOR_WHITE)
+        screen.bb:blitFrom(
+            logo,
+            math.floor((screen_w - logo_w) / 2),
+            math.floor((screen_h - logo_h) / 2),
+            0, 0, logo_w, logo_h
+        )
+        screen:refreshFull(0, 0, screen_w, screen_h)
+        logo:free()
+    end)
+    if not ok then
+        io.write("[ios splash] failed: ", tostring(err), "\n")
+    end
+end
+
 -- Document renderers canvas
 local CanvasContext = require("document/canvascontext")
 CanvasContext:init(Device)

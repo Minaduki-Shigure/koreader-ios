@@ -350,6 +350,12 @@ function Device:init()
                 UIManager:broadcastEvent(Event:new("GamepadButtonUp", ev.value))
             elseif ev.code == SDL.SDL.SDL_EVENT_TEXT_INPUT then
                 UIManager:sendEvent(Event:new("TextInput", tostring(ev.value)))
+            elseif os.getenv("KO_IOS") == "1"
+                    and ev.code == SDL.SDL.SDL_EVENT_DID_ENTER_FOREGROUND then
+                -- SDL may recreate or invalidate its renderer state while an
+                -- iOS app is suspended. Repaint every visible window after the
+                -- app has fully returned to the foreground.
+                UIManager:setDirty("all", "full")
             end
         end,
     }

@@ -670,12 +670,23 @@ function BookInfoManager:collectSubprocesses()
     end
 
     -- We're done, back to a single core
-    if #self.subprocesses_pids == 0 then
+    if #self.subprocesses_pids == 0 and not self._ios_chunk_state then
         Device:enableCPUCores(1)
     end
 end
 
 function BookInfoManager:terminateBackgroundJobs()
+    if self._ios_chunk_state then
+        if self._ios_chunk_action then
+            UIManager:unschedule(self._ios_chunk_action)
+        end
+        self._ios_chunk_state = nil
+        self._ios_chunk_action = nil
+        UIManager:allowStandby()
+        if #self.subprocesses_pids == 0 then
+            Device:enableCPUCores(1)
+        end
+    end
     logger.dbg("terminating", #self.subprocesses_pids, "subprocesses")
     for i=1, #self.subprocesses_pids do
         FFIUtil.terminateSubProcess(self.subprocesses_pids[i])
@@ -683,7 +694,44 @@ function BookInfoManager:terminateBackgroundJobs()
 end
 
 function BookInfoManager:isExtractingInBackground()
-    return #self.subprocesses_pids > 0
+    return #self.subprocesses_pids > 0 or self._ios_chunk_state ~= nil
+end
+
+-- iOS cannot fork the extraction worker. Process one book per UI tick so a
+-- folder scan does not block the event loop for the duration of the full batch.
+function BookInfoManager:_iosProcessNextChunk()
+    local state = self._ios_chunk_state
+    if not state then
+        return
+    end
+
+    if state.index > #state.files then
+        logger.dbg("iOS background extraction done")
+        self._ios_chunk_state = nil
+        self._ios_chunk_action = nil
+        UIManager:allowStandby()
+        if self.delayed_cleanup then
+            self.delayed_cleanup = false
+            self:cleanUp()
+        end
+        if #self.subprocesses_pids == 0 then
+            Device:enableCPUCores(1)
+        end
+        return
+    end
+
+    local file = state.files[state.index]
+    state.index = state.index + 1
+    local ok, err = pcall(self.extractBookInfo, self, file.filepath, file.cover_specs)
+    if not ok then
+        logger.err("iOS background extraction failed for", file.filepath, err)
+    end
+
+    -- extractBookInfo() is synchronous, but keep this guard so cancellation
+    -- triggered from an error handler cannot resurrect a stopped batch.
+    if self._ios_chunk_state == state then
+        UIManager:nextTick(self._ios_chunk_action)
+    end
 end
 
 function BookInfoManager:extractInBackground(files)
@@ -697,6 +745,18 @@ function BookInfoManager:extractInBackground(files)
     -- Close current handle on sqlite, so it's not shared by both processes
     -- (both processes will re-open one when needed)
     BookInfoManager:closeDbConnection()
+
+    if os.getenv("KO_IOS") == "1" then
+        self.cleanup_needed = true
+        self._ios_chunk_state = { index = 1, files = files }
+        self._ios_chunk_action = function()
+            self:_iosProcessNextChunk()
+        end
+        UIManager:preventStandby()
+        Device:enableCPUCores(2)
+        UIManager:nextTick(self._ios_chunk_action)
+        return true
+    end
 
     -- Define task that will be run in subprocess
     local task = function()
@@ -745,9 +805,9 @@ function BookInfoManager:extractInBackground(files)
 end
 
 function BookInfoManager:cleanUp()
-    if #self.subprocesses_pids > 0 then
+    if #self.subprocesses_pids > 0 or self._ios_chunk_state then
         -- Some background extraction may still use our tmpcr3cache,
-        -- cleanup will be dealt with by BookInfoManager:collectSubprocesses()
+        -- cleanup will be dealt with when the background work finishes.
         self.delayed_cleanup = true
         return
     end
