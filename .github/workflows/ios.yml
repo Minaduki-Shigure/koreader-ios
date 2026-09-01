@@ -1,0 +1,211 @@
+name: iOS unsigned baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - "ci/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ios:
+    name: iOS arm64 / Xcode 16.4
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      CLICOLOR_FORCE: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_INSTALL_UPGRADE: "1"
+      IOS_ARCH: arm64
+      IOS_DEPLOYMENT_TARGET: "14.0"
+      IOS_MARKETING_VERSION: v2026.03
+      IOS_PLATFORM: iphoneos
+      PARALLEL_JOBS: "4"
+      AUDITED_PARENT_BASE: a7cf2a98a28c6e70fb33087549bfb4a734ed19bc
+      PINNED_BASE_COMMIT: 6e4bafc0a0619cd69e0961933524581ebed9ef0d
+      DERIVED_DATA: ${{ runner.temp }}/KOReaderDerivedData
+
+    steps:
+      - name: Checkout pinned sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Prepare evidence directory
+        run: mkdir -p artifacts/logs
+
+      - name: Fetch pinned release tag
+        run: |
+          git merge-base --is-ancestor "${AUDITED_PARENT_BASE}" HEAD
+          git fetch --no-tags https://github.com/koreader/koreader.git \
+            refs/tags/v2026.03:refs/tags/v2026.03
+          test "$(git rev-parse 'refs/tags/v2026.03^{}')" = \
+            "825b9bced0eb666b45af4208e1c0095b88d38b0d"
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          sw_vers
+
+      - name: Install prerequisites
+        run: |
+          packages=(
+            autoconf
+            automake
+            bash
+            binutils
+            cmake
+            coreutils
+            findutils
+            gettext
+            gnu-getopt
+            libtool
+            make
+            meson
+            nasm
+            ninja
+            pkgconf
+            util-linux
+            xcodegen
+          )
+          brew install --formula --overwrite --quiet "${packages[@]}"
+
+          prefix="$(brew --prefix)"
+          {
+            brew --version
+            brew config
+          } >artifacts/homebrew-environment.txt
+          brew list --versions "${packages[@]}" | LC_ALL=C sort \
+            >artifacts/homebrew-formulas.txt
+
+          {
+            echo "${prefix}/opt/findutils/libexec/gnubin"
+            echo "${prefix}/opt/gettext/bin"
+            echo "${prefix}/opt/gnu-getopt/bin"
+            echo "${prefix}/opt/make/libexec/gnubin"
+            echo "${prefix}/opt/util-linux/bin"
+          } >>"${GITHUB_PATH}"
+
+      - name: Verify prerequisites
+        run: ./platform/ios/check-prereqs.sh
+
+      - name: Verify pinned submodules
+        run: |
+          make fetchthirdparty
+          git submodule status --recursive | tee artifacts/submodules.txt
+          test "$(git -C base rev-parse HEAD)" = "${PINNED_BASE_COMMIT}"
+
+      - name: Generate Xcode project
+        run: |
+          set -o pipefail
+          make TARGET=ios xcodeproj 2>&1 | \
+            tee artifacts/logs/make-ios.log
+          test -f platform/ios/Info.plist
+          ! grep -q '@VERSION@' platform/ios/Info.plist
+
+      - name: Build unsigned device app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project KOReader.xcodeproj \
+            -scheme KOReader \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "${DERIVED_DATA}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            ENABLE_USER_SCRIPT_SANDBOXING=NO \
+            build 2>&1 | tee artifacts/logs/xcodebuild-ios.log
+
+      - name: Validate app bundle
+        run: |
+          app="${DERIVED_DATA}/Build/Products/Debug-iphoneos/KOReader.app"
+          plist="${app}/Info.plist"
+
+          test -x "${app}/KOReader"
+          test -f "${app}/app/reader.lua"
+          test -f "${app}/app/libs/libkoreader-monolibtic.dylib"
+          test -f "${app}/app/libs/libluajit.dylib"
+          test -f "${app}/app/libs/libSDL3.0.dylib"
+
+          plutil -lint "${plist}"
+          test "$(/usr/libexec/PlistBuddy -c \
+            'Print :CFBundleIdentifier' "${plist}")" = "rocks.koreader.ios"
+          test "$(/usr/libexec/PlistBuddy -c \
+            'Print :CFBundlePackageType' "${plist}")" = "APPL"
+          version="$(/usr/libexec/PlistBuddy -c \
+            'Print :CFBundleShortVersionString' "${plist}")"
+          test "${version}" = "2026.3.0"
+
+          lipo -verify_arch arm64 "${app}/KOReader"
+          xcrun vtool -show-build "${app}/KOReader"
+          otool -L "${app}/KOReader" | tee artifacts/linked-libraries.txt
+
+          if find "${app}" -type l -print -quit | grep -q .; then
+            echo "error: app bundle contains a symbolic link" >&2
+            exit 1
+          fi
+
+          while IFS= read -r -d '' binary; do
+            lipo -verify_arch arm64 "${binary}"
+            codesign --verify --strict "${binary}"
+          done < <(find "${app}/app" -type f \
+            \( -name '*.dylib' -o -name '*.so' \) -print0)
+
+          find "${app}" -type f -print | LC_ALL=C sort \
+            >artifacts/bundle-files.txt
+
+      - name: Package unsigned IPA
+        run: |
+          app="${DERIVED_DATA}/Build/Products/Debug-iphoneos/KOReader.app"
+          mkdir -p artifacts/Payload
+          ditto "${app}" artifacts/Payload/KOReader.app
+          ditto -c -k --sequesterRsrc --keepParent \
+            artifacts/Payload artifacts/KOReader-baseline-unsigned.ipa
+          rm -rf artifacts/Payload
+
+          {
+            git rev-parse HEAD
+            git submodule status --recursive
+            xcodebuild -version
+            xcrun --sdk iphoneos --show-sdk-version
+          } >artifacts/build-manifest.txt
+
+          shasum -a 256 artifacts/KOReader-baseline-unsigned.ipa \
+            >artifacts/SHA256SUMS
+
+      - name: Upload successful build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: koreader-ios-baseline-${{ github.sha }}
+          path: artifacts
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload failure logs
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: koreader-ios-baseline-failure-${{ github.sha }}
+          path: artifacts/logs
+          if-no-files-found: warn
+          retention-days: 7

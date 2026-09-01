@@ -14,6 +14,9 @@ endef
 ios-check-prereqs:
 	@$(CURDIR)/platform/ios/check-prereqs.sh
 
+ios-info-plist:
+	@$(CURDIR)/platform/ios/generate-info-plist.sh
+
 update: ios-check-prereqs all
 	$(CURDIR)/platform/ios/do_ios_bundle.sh $(INSTALL_DIR)
 
@@ -21,7 +24,7 @@ update: ios-check-prereqs all
 # Depends on `all` so the staging tree + base/build/<machine>/libs/ exist
 # (the project's pre-build script also calls `make TARGET=ios base`, but
 # having them present at generation time avoids confusing first-time errors).
-xcodeproj: ios-check-prereqs all
+xcodeproj: ios-check-prereqs all ios-info-plist
 	xcodegen generate \
 		--spec $(IOS_DIR)/project.yml \
 		--project $(CURDIR) \
@@ -31,4 +34,4 @@ xcodeproj: ios-check-prereqs all
 	@echo "Open it in Xcode, set your Team under Signing & Capabilities,"
 	@echo "then Run on a connected device (or a simulator if libs are simulator-built)."
 
-PHONY += ios-check-prereqs xcodeproj
+PHONY += ios-check-prereqs ios-info-plist xcodeproj
