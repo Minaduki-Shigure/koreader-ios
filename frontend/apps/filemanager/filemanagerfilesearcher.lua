@@ -134,6 +134,8 @@ function FileSearcher:onShowFileSearch(search_string)
 end
 
 function FileSearcher:doSearch()
+    FileSearcher.search_path = filemanagerutil.constrainToHome(FileSearcher.search_path)
+    if not FileSearcher.search_path then return end
     local search_hash = FileSearcher.search_path .. (FileSearcher.search_string or "") ..
         tostring(self.case_sensitive) .. tostring(self.include_subfolders) .. tostring(self.include_metadata)
     local not_cached = FileSearcher.search_hash ~= search_hash
@@ -171,6 +173,8 @@ end
 
 function FileSearcher:getList()
     self.no_metadata_count = 0 -- will be updated in doSearch() with result from subprocess
+    FileSearcher.search_path = filemanagerutil.constrainToHome(FileSearcher.search_path)
+    if not FileSearcher.search_path then return {}, {}, self.no_metadata_count end
     local sys_folders = { -- do not search in sys_folders
         ["/dev"] = true,
         ["/proc"] = true,
@@ -204,9 +208,10 @@ function FileSearcher:getList()
                     if d ~= "/" then
                         fullpath = d .. fullpath
                     end
-                    local attributes = lfs.attributes(fullpath) or {}
+                    local path_allowed = filemanagerutil.isPathInsideHome(fullpath)
+                    local attributes = path_allowed and lfs.attributes(fullpath) or {}
                     -- Don't traverse hidden folders if we're not showing them
-                    if attributes.mode == "directory" and f ~= "." and f ~= ".."
+                    if path_allowed and attributes.mode == "directory" and f ~= "." and f ~= ".."
                             and (FileChooser.show_hidden or not util.stringStartsWith(f, "."))
                             and FileChooser:show_dir(f) then
                         if self.include_subfolders and not sys_folders[fullpath] then
@@ -216,7 +221,7 @@ function FileSearcher:getList()
                             table.insert(dirs, { f, fullpath, attributes })
                         end
                     -- Always ignore macOS resource forks, too.
-                    elseif attributes.mode == "file" and not util.stringStartsWith(f, "._")
+                    elseif path_allowed and attributes.mode == "file" and not util.stringStartsWith(f, "._")
                             and (FileChooser.show_unsupported or DocumentRegistry:hasProvider(fullpath))
                             and FileChooser:show_file(f) then
                         if self:isFileMatch(f, fullpath, search_string, true) then
@@ -334,7 +339,9 @@ function FileSearcher:updateItemTable(item_table)
 end
 
 function FileSearcher:onMenuSelect(item)
-    if lfs.attributes(item.path) == nil then return end
+    local path = filemanagerutil.resolveDocumentPath(item.path)
+    if not path or lfs.attributes(path) == nil then return end
+    item.path = path
     if self._manager.selected_files then
         if item.is_file then
             item.dim = not item.dim and true or nil
@@ -361,8 +368,10 @@ function FileSearcher:onMenuSelect(item)
 end
 
 function FileSearcher:onMenuHold(item)
-    if self._manager.selected_files or lfs.attributes(item.path) == nil then return true end
-    local file = item.path
+    if self._manager.selected_files then return true end
+    local file = filemanagerutil.resolveDocumentPath(item.path)
+    if not file or lfs.attributes(file) == nil then return true end
+    item.path = file
     local is_file = item.is_file or false
     self.file_dialog = nil
 

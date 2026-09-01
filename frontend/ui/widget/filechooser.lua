@@ -119,9 +119,9 @@ function FileChooser:getPathList(path, collate, dirs, files)
         for f in iter, dir_obj do
             if FileChooser.show_hidden or not util.stringStartsWith(f, ".") then
                 local fullpath = path.."/"..f
-                local attributes = lfs.attributes(fullpath) or {}
                 local item = true
                 local path_allowed = filemanagerutil.isPathInsideHome(fullpath)
+                local attributes = path_allowed and lfs.attributes(fullpath) or {}
                 if path_allowed and attributes.mode == "directory" and f ~= "." and f ~= ".."
                         and self:show_dir(f) then
                     if FileChooser.show_flat_view then

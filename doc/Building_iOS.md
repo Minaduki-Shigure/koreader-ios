@@ -157,6 +157,9 @@ bundle satisfy the strict-offline checks.
 - Screenshots are forced into private app data. Arbitrary notebook-file paths
   and custom book-cover files are disabled so stale settings cannot reopen or
   overwrite files outside the private container.
+- Global bookmark aggregation and the metadata archive are disabled because
+  legacy source folders can point outside Books. Per-book bookmarks,
+  highlights, annotations, collections, and reading progress remain available.
 - Copy, move, and rename operations that depend on external `/bin/cp` or
   `/bin/mv` processes are unavailable in the first strict build. Private Books
   import, directory creation, and guarded deletion remain available.
@@ -193,7 +196,8 @@ bundle satisfy the strict-offline checks.
   for a bidirectional subprocess pipe receive an explicit unsupported result.
 - **Local dictionary lookup is disabled.** KOReader normally launches `sdcv`
   as a separate process. The strict build removes that executable and its GLib
-  dependency instead of exposing an action that cannot run reliably on iOS.
+  dependency, dictionary data, and the reader dictionary module instead of
+  exposing an action that cannot run reliably on iOS.
 - **No direct external document access.** The system document picker copies one
   supported document at a time into private Books storage. The port does not
   retain security-scoped access to files or folders owned by other providers.

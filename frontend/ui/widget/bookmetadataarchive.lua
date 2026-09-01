@@ -2,6 +2,7 @@ local BookList = require("ui/widget/booklist")
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local DocSettings = require("docsettings")
+local Device = require("device")
 local LuaSettings = require("luasettings")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -15,6 +16,7 @@ local BookMetadataArchive = WidgetContainer:extend{
 }
 
 function BookMetadataArchive:showBookList(ui)
+    if Device:isHardenedOffline() then return false end
     self.ui = ui or require("apps/filemanager/filemanager").instance or require("apps/reader/readerui").instance
     self.books = self.getBookList()
     self.book_list = BookList:new{

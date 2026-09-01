@@ -65,8 +65,8 @@ local settingsList = {
     favorites = {category="none", event="ShowColl", title=_("Favorites"), general=true},
     collections = {category="none", event="ShowCollList", title=_("Collections"), general=true},
     collections_search = {category="none", event="ShowCollectionsSearchDialog", title=_("Collections search"), general=true},
-    book_metadata_archive = {category="none", event="ShowBookMetadataArchive", title=_("Book metadata archive"), general=true},
-    bookmark_browser = {category="none", event="ShowBookmarkBrowser", title=_("Bookmark browser"), general=true, separator=true},
+    book_metadata_archive = {category="none", event="ShowBookMetadataArchive", title=_("Book metadata archive"), general=true, condition=not Device:isHardenedOffline()},
+    bookmark_browser = {category="none", event="ShowBookmarkBrowser", title=_("Bookmark browser"), general=true, separator=true, condition=not Device:isHardenedOffline()},
     ----
     dictionary_lookup = {category="none", event="ShowDictionaryLookup", title=_("Dictionary lookup"), general=true, condition=not Device:isHardenedOffline()},
     load_dictionary_preset = {category="string", event="LoadDictionaryPreset", title=_("Load dictionary preset"), args_func=ReaderDictionary and ReaderDictionary.getPresets, general=true, condition=not Device:isHardenedOffline()},
@@ -77,7 +77,7 @@ local settingsList = {
     menu_search = {category="none", event="MenuSearch", title=_("Menu search"), general=true},
     open_next_document_in_folder = {category="none", event="OpenNextOrPreviousFileInFolder", title=_("Open next file in last book folder"), general=true},
     open_previous_document_in_folder = {category="none", event="OpenNextOrPreviousFileInFolder", arg=true, title=_("Open previous file in last book folder"), general=true},
-    notebook_file = {category="none", event="ShowNotebookFile", title=_("Notebook file"), general=true},
+    notebook_file = {category="none", event="ShowNotebookFile", title=_("Notebook file"), general=true, condition=not Device:isHardenedOffline()},
     screenshot = {category="none", event="Screenshot", title=_("Screenshot"), general=true, separator=true},
     ----
 
@@ -577,8 +577,9 @@ local dispatcher_menu_order = {
 if Device:isHardenedOffline() then
     for i = #dispatcher_menu_order, 1, -1 do
         local name = dispatcher_menu_order[i]
-        if name == "dictionary_lookup" or name == "load_dictionary_preset"
-                or name == "cycle_dictionary_preset" then
+        if name == "book_metadata_archive" or name == "bookmark_browser"
+                or name == "cycle_dictionary_preset" or name == "dictionary_lookup"
+                or name == "load_dictionary_preset" or name == "notebook_file" then
             table.remove(dispatcher_menu_order, i)
         end
     end

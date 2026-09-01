@@ -5,6 +5,7 @@ local ButtonDialog = require("ui/widget/buttondialog")
 local ButtonSelector = require("ui/widget/buttonselector")
 local CheckButton = require("ui/widget/checkbutton")
 local DocSettings = require("docsettings")
+local Device = require("device")
 local DocumentRegistry = require("document/documentregistry")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
@@ -19,7 +20,7 @@ local ffiUtil = require("ffi/util")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
 local util = require("util")
 local _ = require("gettext")
-local Screen = require("device").screen
+local Screen = Device.screen
 local T = ffiUtil.template
 
 local BookmarkBrowser = WidgetContainer:extend{
@@ -30,6 +31,7 @@ local BookmarkBrowser = WidgetContainer:extend{
 }
 
 function BookmarkBrowser:showSourceDialog(ui, force_show_dialog)
+    if Device:isHardenedOffline() then return false end
     self.ui = ui
     local home_dir = G_reader_settings:readSetting("home_dir")
     local default_source = G_reader_settings:readSetting("bookmarks_browser_source")
@@ -229,6 +231,7 @@ function BookmarkBrowser:showSourceDialog(ui, force_show_dialog)
 end
 
 function BookmarkBrowser:show(files, ui)
+    if Device:isHardenedOffline() then return false end
     self.ui = ui or self.ui
     self.ui.highlight = self.ui.highlight or ReaderHighlight -- for ReaderBookmark methods
 

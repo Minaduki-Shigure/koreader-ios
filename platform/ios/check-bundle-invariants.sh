@@ -64,15 +64,18 @@ for forbidden in \
     frontend/ui/downloadmgr.lua \
     frontend/ui/otamanager.lua \
     frontend/apps/cloudstorage \
+    frontend/apps/reader/modules/readerdictionary.lua \
     frontend/apps/reader/modules/readerwikipedia.lua \
+    data/dict \
     ffi/netinfo.lua \
     ffi/crypto.lua \
     common/socket common/socket.lua \
     common/ssl common/ssl.lua \
     common/turbo common/turbo.lua \
-    common/zmq common/zmq.lua common/lzmq.lua; do
+    common/zmq common/zmq.lua common/lzmq.lua \
+    sdcv; do
     if [ -e "${APP_DIR}/${forbidden}" ]; then
-        echo "error: forbidden online module bundled: ${forbidden}" >&2
+        echo "error: forbidden strict-offline module bundled: ${forbidden}" >&2
         exit 1
     fi
 done
@@ -110,16 +113,18 @@ if [ -f "${posix_header}" ] && [ "${posix_magic}" != "1b4c4a" ]; then
     fi
 fi
 
-native_network_payload="$(find "${APP_DIR}" \
+forbidden_native_payload="$(find "${APP_DIR}" \
     \( -iname 'libssl.*' -o -iname 'libcrypto.*' \
+       -o -iname 'libgio*' -o -iname 'libglib*' \
+       -o -iname 'libgmodule*' -o -iname 'libgobject*' \
        -o -iname 'libluasocket.*' -o -iname 'libluasec.*' \
        -o -iname 'libzmq.*' -o -iname 'libczmq.*' \
        -o -iname '*zmq*.so' -o -iname '*czmq*.so' \
        -o -iname 'tffi_wrap.*' -o -iname 'turbo.so' \
        -o -iname 'socket.so' -o -iname 'ssl.so' \
        -o -iname '*qtfb*' \) -print -quit)"
-if [ -n "${native_network_payload}" ]; then
-    echo "error: forbidden native network module bundled: ${native_network_payload}" >&2
+if [ -n "${forbidden_native_payload}" ]; then
+    echo "error: forbidden native network/dictionary module bundled: ${forbidden_native_payload}" >&2
     exit 1
 fi
 

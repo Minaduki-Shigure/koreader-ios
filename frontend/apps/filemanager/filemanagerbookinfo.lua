@@ -935,6 +935,7 @@ end
 -- book metadata (sdr)
 
 function BookInfo:onShowBookMetadataArchive()
+    if Device:isHardenedOffline() then return false end
     if G_reader_settings:has("document_metadata_arc_folder") then
         local BookMetadataArchive = require("ui/widget/bookmetadataarchive")
         BookMetadataArchive:showBookList(self.ui)

@@ -49,12 +49,14 @@ function FileManagerCollection:addToMainMenu(menu_items)
             self:onShowCollList()
         end,
     }
-    menu_items.bookmark_browser = {
-        text = _("Bookmark browser"),
-        callback = function()
-            self:onShowBookmarkBrowser()
-        end,
-    }
+    if not Device:isHardenedOffline() then
+        menu_items.bookmark_browser = {
+            text = _("Bookmark browser"),
+            callback = function()
+                self:onShowBookmarkBrowser()
+            end,
+        }
+    end
 end
 
 -- collection
@@ -1690,8 +1692,9 @@ end
 function FileManagerCollection:genBookmarkBrowserButton(files, caller_pre_callback, button_disabled)
     return {
         text = _("Bookmarks"),
-        enabled = not button_disabled,
+        enabled = not Device:isHardenedOffline() and not button_disabled,
         callback = function()
+            if Device:isHardenedOffline() then return false end
             if caller_pre_callback then
                 caller_pre_callback()
             end
@@ -1702,6 +1705,7 @@ function FileManagerCollection:genBookmarkBrowserButton(files, caller_pre_callba
 end
 
 function FileManagerCollection:onShowBookmarkBrowser()
+    if Device:isHardenedOffline() then return false end
     local BookmarkBrowser = require("ui/widget/bookmarkbrowser")
     BookmarkBrowser:showSourceDialog(self.ui)
 end

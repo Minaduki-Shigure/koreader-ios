@@ -35,6 +35,9 @@ INPUT="${REPO_ROOT}/frontend/device/input.lua"
 READ_HISTORY="${REPO_ROOT}/frontend/readhistory.lua"
 FILE_MANAGER_UTIL="${REPO_ROOT}/frontend/apps/filemanager/filemanagerutil.lua"
 FILE_MANAGER_BOOKINFO="${REPO_ROOT}/frontend/apps/filemanager/filemanagerbookinfo.lua"
+FILE_MANAGER_SEARCHER="${REPO_ROOT}/frontend/apps/filemanager/filemanagerfilesearcher.lua"
+BOOKMARK_BROWSER="${REPO_ROOT}/frontend/ui/widget/bookmarkbrowser.lua"
+BOOK_METADATA_ARCHIVE="${REPO_ROOT}/frontend/ui/widget/bookmetadataarchive.lua"
 ALLOWLIST="${PLATFORM_DIR}/plugin-allowlist.txt"
 
 require_source() {
@@ -243,9 +246,18 @@ fi
 # deterministic fallback before destructive teardown or auxiliary viewers.
 require_file_source "${DOCUMENT_POLICY}" 'local canonical = path and ffiUtil.realpath(path)' "document path policy"
 require_file_source "${DOCUMENT_POLICY}" 'util.stringStartsWith(canonical, root .. "/")' "document path policy"
+require_file_source "${DOCUMENT_POLICY}" 'local function hasSymlinkComponent(path, root)' "document path policy"
+require_file_source "${DOCUMENT_POLICY}" 'lfs.symlinkattributes(current, "mode") == "link"' "document path policy"
 reject_file_source "${DOCUMENT_POLICY}" 'registerInternalDocument' "document path policy"
 require_file_source "${DOCUMENT_REGISTRY}" 'DocumentPathPolicy:resolveDocument(file)' "document registry"
 require_file_source "${READER_UI}" 'DocumentPathPolicy:resolveDocument(file)' "reader UI"
+search_boundary_count="$(grep -Fc -- 'FileSearcher.search_path = filemanagerutil.constrainToHome(FileSearcher.search_path)' "${FILE_MANAGER_SEARCHER}" || true)"
+if [ "${search_boundary_count}" -lt 2 ]; then
+    echo "error: file search root is not constrained to Books" >&2
+    exit 1
+fi
+require_file_source "${FILE_MANAGER_SEARCHER}" 'local path_allowed = filemanagerutil.isPathInsideHome(fullpath)' "file search traversal"
+require_file_source "${FILE_MANAGER_SEARCHER}" 'local path = filemanagerutil.resolveDocumentPath(item.path)' "file search result"
 require_file_source "${READER_ENTRY}" 'DocumentPathPolicy:resolveDocument(last_file)' "reader startup"
 require_file_source "${READER_ENTRY}" 'G_reader_settings:delSetting("lastfile")' "reader startup"
 require_file_source "${READER_ENTRY}" 'G_reader_settings:saveSetting("start_with", start_with)' "reader startup"
@@ -305,6 +317,16 @@ require_file_source "${READER_ANNOTATION}" 'if not dir or not DocSettings.prepar
 require_file_source "${READER_BOOKMARK}" 'table.remove(menu_items.bookmarks_settings.sub_item_table)' "annotation export menu"
 require_file_source "${FILE_MANAGER_BOOKINFO}" 'if is_file and not Device:isHardenedOffline() then' "notebook metadata"
 require_file_source "${FILE_MANAGER_BOOKINFO}" 'if Device:isHardenedOffline() then return false end' "custom cover and notebook actions"
+bookmark_browser_guard_count="$(grep -Fc -- 'if Device:isHardenedOffline() then return false end' "${BOOKMARK_BROWSER}" || true)"
+if [ "${bookmark_browser_guard_count}" -lt 2 ]; then
+    echo "error: global bookmark browser is reachable in hardened iOS" >&2
+    exit 1
+fi
+require_file_source "${BOOK_METADATA_ARCHIVE}" 'if Device:isHardenedOffline() then return false end' "metadata archive"
+require_file_source "${FILE_MANAGER_COLLECTION}" 'enabled = not Device:isHardenedOffline() and not button_disabled' "bookmark browser action"
+require_file_source "${DISPATCHER}" 'book_metadata_archive = {category="none", event="ShowBookMetadataArchive", title=_("Book metadata archive"), general=true, condition=not Device:isHardenedOffline()}' "dispatcher"
+require_file_source "${DISPATCHER}" 'bookmark_browser = {category="none", event="ShowBookmarkBrowser", title=_("Bookmark browser"), general=true, separator=true, condition=not Device:isHardenedOffline()}' "dispatcher"
+require_file_source "${DISPATCHER}" 'notebook_file = {category="none", event="ShowNotebookFile", title=_("Notebook file"), general=true, condition=not Device:isHardenedOffline()}' "dispatcher"
 
 # Keep ordinary platforms byte-for-byte compatible in action ordering.
 require_file_source "${READER_HIGHLIGHT}" 'table.insert(long_press_action, 6, {_("Translate"), "translate"})' "ReaderHighlight"
