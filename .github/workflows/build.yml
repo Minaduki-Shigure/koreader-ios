@@ -205,8 +205,40 @@ jobs:
           path: build
           key: ${{ steps.build-restore.outputs.cache-primary-key }}
 
+      - name: Test hardened settings loader
+        if: ${{ hashFiles('spec/unit/safesettings_spec.lua') != '' }}
+        run: >
+          ./base/utils/fake_tty.py make --assume-old=base testfront
+          T=spec/unit/safesettings_spec.lua
+
       - name: Test
-        run: ./base/utils/fake_tty.py make --assume-old=base testfront
+        id: testfront
+        run: |
+          mkdir -p artifacts/logs
+          set +e
+          ./base/utils/fake_tty.py make --assume-old=base testfront 2>&1 | \
+            tee artifacts/logs/testfront.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "${status}" -ne 0 ]; then
+            summary="$(grep -m1 -E '(^Failure|^Error|_spec\.lua:[0-9]+:)' \
+              artifacts/logs/testfront.log || true)"
+            if [ -z "${summary}" ]; then
+              summary="testfront exited with status ${status}"
+            fi
+            summary="${summary//'%'/'%25'}"
+            echo "::error title=Frontend tests failed::${summary}"
+            exit "${status}"
+          fi
+
+      - name: Upload frontend test failure
+        if: ${{ failure() && steps.testfront.conclusion == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: frontend-test-failure-${{ matrix.platform }}-${{ github.sha }}
+          path: artifacts/logs/testfront.log
+          if-no-files-found: error
+          retention-days: 7
 
       # Generate / upload artifact. {{{
 
