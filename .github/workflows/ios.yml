@@ -113,7 +113,10 @@ jobs:
           test "$(git -C base rev-parse HEAD)" = "${PINNED_BASE_COMMIT}"
           ./platform/ios/check-source-invariants.sh | \
             tee artifacts/logs/source-invariants.log
-          ./platform/ios/test-macho-closure.sh | \
+
+      - name: Test Mach-O closure verifier
+        run: |
+          ./platform/ios/test-macho-closure.sh 2>&1 | \
             tee artifacts/logs/macho-closure-tests.log
 
       - name: Run release-gating frontend tests

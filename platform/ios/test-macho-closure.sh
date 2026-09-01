@@ -2,6 +2,14 @@
 
 set -euo pipefail
 
+if [ "${KO_FAKE_TOOL:-}" = "file" ]; then
+    fake_tool_dispatch="file"
+elif [ "${KO_FAKE_TOOL:-}" = "otool" ]; then
+    fake_tool_dispatch="otool"
+else
+    fake_tool_dispatch=""
+fi
+
 fake_file() {
     local path="${2:-}"
     if [ "${NON_MACHO_DEPENDENCY:-0}" = "1" ] \
@@ -54,10 +62,12 @@ fake_otool() {
     esac
 }
 
-case "$(basename "$0")" in
+case "${fake_tool_dispatch}" in
     file) fake_file "$@"; exit ;;
     otool) fake_otool "$@"; exit ;;
 esac
+
+trap 'status=$?; echo "::error title=Mach-O closure self-test failed::line ${LINENO}: ${BASH_COMMAND} (exit ${status})"; exit "${status}"' ERR
 
 platform_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tmpdir="$(mktemp -d)"
@@ -66,8 +76,14 @@ trap 'rm -rf "${tmpdir}"' EXIT
 app="${tmpdir}/KOReader.app"
 mkdir -p "${tmpdir}/bin" "${app}/app/libs"
 touch "${app}/KOReader" "${app}/app/libs/libfixture.dylib"
-ln -s "${platform_dir}/test-macho-closure.sh" "${tmpdir}/bin/file"
-ln -s "${platform_dir}/test-macho-closure.sh" "${tmpdir}/bin/otool"
+for tool in file otool; do
+    {
+        echo '#!/bin/bash'
+        printf 'KO_FAKE_TOOL=%q exec %q "$@"\n' \
+            "${tool}" "${platform_dir}/test-macho-closure.sh"
+    } >"${tmpdir}/bin/${tool}"
+    chmod +x "${tmpdir}/bin/${tool}"
+done
 
 run_check() {
     PATH="${tmpdir}/bin:${PATH}" "${platform_dir}/check-macho-closure.sh" "${app}"
