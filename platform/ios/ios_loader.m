@@ -100,17 +100,15 @@ static BOOL configure_private_storage(NSString **dataPath, NSString **booksPath,
     return YES;
 }
 
-static void set_lua_args(lua_State *L, int argc, char *argv[]) {
-    lua_createtable(L, argc > 1 ? argc - 1 : 0, 0);
-    for (int i = 1; i < argc; ++i) {
-        lua_pushstring(L, argv[i]);
-        lua_rawseti(L, -2, i);
-    }
+static void set_empty_lua_args(lua_State *L) {
+    lua_createtable(L, 0, 0);
     lua_setglobal(L, "arg");
 }
 
 int main(int argc, char *argv[]) {
     @autoreleasepool {
+        (void)argc;
+        (void)argv;
         NSString *resourcePath = [[NSBundle mainBundle] resourcePath];
         if (!resourcePath) {
             fprintf(stderr, "[%s]: NSBundle resourcePath is nil\n", LOGNAME);
@@ -179,9 +177,10 @@ int main(int argc, char *argv[]) {
         }
         luaL_openlibs(L);
 
-        /* Build arg directly through the Lua C API. Treating argv values as
-         * Lua source would make quotes and control characters executable. */
-        set_lua_args(L, argc, argv);
+        /* The strict build has no open-in document types or command-line file
+         * ingress. Always start in the private library and ignore process
+         * arguments, so only the copy-in picker can introduce a document. */
+        set_empty_lua_args(L);
 
         int retval = luaL_dofile(L, "reader.lua");
         if (retval) {

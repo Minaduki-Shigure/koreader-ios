@@ -190,6 +190,9 @@ static NSURL *ko_available_destination(NSURL *booksURL, NSString *stem,
         }
         NSString *boundedStem = ko_truncate_utf8(
             stem, KO_IMPORT_MAX_FILENAME_BYTES - extensionBytes - suffixBytes);
+        if (boundedStem.length == 0) {
+            boundedStem = @"Book";
+        }
         NSString *filename = [NSString stringWithFormat:@"%@%@.%@",
                                                         boundedStem,
                                                         collisionSuffix,
@@ -408,23 +411,22 @@ static UIViewController *ko_ios_top_view_controller(void) {
             @try {
                 path = ko_copy_document_to_books(sourceURL, &error);
             } @finally {
-                /* asCopy:YES gives the app a temporary private copy that is
-                 * otherwise retained until process exit. Our durable copy is
-                 * already in Books, so release the picker copy promptly. */
-                if (path) {
-                    NSURL *homeURL = [NSURL fileURLWithPath:NSHomeDirectory()
-                                                 isDirectory:YES];
-                    const char *booksHome = getenv("KO_BOOKS_HOME");
-                    NSURL *booksURL = booksHome
-                        ? [NSURL fileURLWithFileSystemRepresentation:booksHome
-                                                       isDirectory:YES
-                                                     relativeToURL:nil]
-                        : nil;
-                    if (ko_url_is_at_or_inside_directory(sourceURL, homeURL)
-                            && (!booksURL
-                                || !ko_url_is_at_or_inside_directory(sourceURL, booksURL))) {
-                        [NSFileManager.defaultManager removeItemAtURL:sourceURL error:nil];
-                    }
+                /* asCopy:YES gives the app a picker-owned temporary copy that
+                 * remains until process exit, even when our validation fails.
+                 * Remove only resolved app-container paths, never Books or an
+                 * external provider URL. */
+                NSURL *homeURL = [NSURL fileURLWithPath:NSHomeDirectory()
+                                             isDirectory:YES];
+                const char *booksHome = getenv("KO_BOOKS_HOME");
+                NSURL *booksURL = booksHome
+                    ? [NSURL fileURLWithFileSystemRepresentation:booksHome
+                                                   isDirectory:YES
+                                                 relativeToURL:nil]
+                    : nil;
+                if (ko_url_is_at_or_inside_directory(sourceURL, homeURL)
+                        && (!booksURL
+                            || !ko_url_is_at_or_inside_directory(sourceURL, booksURL))) {
+                    [NSFileManager.defaultManager removeItemAtURL:sourceURL error:nil];
                 }
                 if (hasSecurityScope) {
                     [sourceURL stopAccessingSecurityScopedResource];
