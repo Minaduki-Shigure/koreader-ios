@@ -8,7 +8,7 @@ returns only the final path below KO_BOOKS_HOME.
 --]]--
 
 if os.getenv("KO_IOS") ~= "1"
-        or os.getenv("KO_IOS_STRICT_OFFLINE") ~= "1" then
+        or os.getenv("KO_HARDENED_OFFLINE") ~= "1" then
     return { disabled = true }
 end
 

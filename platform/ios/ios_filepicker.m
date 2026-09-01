@@ -72,6 +72,14 @@ static NSError *ko_import_error(NSInteger code, NSString *description) {
                            userInfo:@{NSLocalizedDescriptionKey: description}];
 }
 
+static BOOL ko_url_is_at_or_inside_directory(NSURL *url, NSURL *directory) {
+    NSString *path = url.URLByResolvingSymlinksInPath.URLByStandardizingPath.path;
+    NSString *root = directory.URLByResolvingSymlinksInPath.URLByStandardizingPath.path;
+    return path && root
+        && ([path isEqualToString:root]
+            || [path hasPrefix:[root stringByAppendingString:@"/"]]);
+}
+
 static NSSet<NSString *> *ko_allowed_extensions(void) {
     static NSSet<NSString *> *extensions;
     static dispatch_once_t onceToken;
@@ -400,6 +408,24 @@ static UIViewController *ko_ios_top_view_controller(void) {
             @try {
                 path = ko_copy_document_to_books(sourceURL, &error);
             } @finally {
+                /* asCopy:YES gives the app a temporary private copy that is
+                 * otherwise retained until process exit. Our durable copy is
+                 * already in Books, so release the picker copy promptly. */
+                if (path) {
+                    NSURL *homeURL = [NSURL fileURLWithPath:NSHomeDirectory()
+                                                 isDirectory:YES];
+                    const char *booksHome = getenv("KO_BOOKS_HOME");
+                    NSURL *booksURL = booksHome
+                        ? [NSURL fileURLWithFileSystemRepresentation:booksHome
+                                                       isDirectory:YES
+                                                     relativeToURL:nil]
+                        : nil;
+                    if (ko_url_is_at_or_inside_directory(sourceURL, homeURL)
+                            && (!booksURL
+                                || !ko_url_is_at_or_inside_directory(sourceURL, booksURL))) {
+                        [NSFileManager.defaultManager removeItemAtURL:sourceURL error:nil];
+                    }
+                }
                 if (hasSecurityScope) {
                     [sourceURL stopAccessingSecurityScopedResource];
                 }
@@ -461,10 +487,12 @@ KO_IOS_EXPORT bool ko_ios_import_document_start(void) {
                 [[UIDocumentPickerViewController alloc]
                     initForOpeningContentTypes:@[UTTypeData]
                                        asCopy:YES];
+            /* Accessing presentationController freezes the controller type
+             * for the current presentation style, so choose the style first. */
+            picker.modalPresentationStyle = UIModalPresentationFullScreen;
             picker.delegate = g_import_delegate;
             picker.presentationController.delegate = g_import_delegate;
             picker.allowsMultipleSelection = NO;
-            picker.modalPresentationStyle = UIModalPresentationFullScreen;
             [top presentViewController:picker animated:YES completion:nil];
         }
     });

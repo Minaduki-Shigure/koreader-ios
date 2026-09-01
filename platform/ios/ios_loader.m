@@ -166,7 +166,7 @@ int main(int argc, char *argv[]) {
         }
         if (setenv("KO_HOME", dataPath.fileSystemRepresentation, 1) != 0
                 || setenv("KO_BOOKS_HOME", booksPath.fileSystemRepresentation, 1) != 0
-                || setenv("KO_IOS_STRICT_OFFLINE", "1", 1) != 0) {
+                || setenv("KO_HARDENED_OFFLINE", "1", 1) != 0) {
             fprintf(stderr, "[%s]: failed to configure private storage environment\n",
                     LOGNAME);
             return EXIT_FAILURE;
@@ -192,7 +192,7 @@ int main(int argc, char *argv[]) {
         unsetenv("LC_ALL");
         unsetenv("KO_HOME");
         unsetenv("KO_BOOKS_HOME");
-        unsetenv("KO_IOS_STRICT_OFFLINE");
+        unsetenv("KO_HARDENED_OFFLINE");
         unsetenv("SDL_FULLSCREEN");
         unsetenv("SDL_TOUCH_MOUSE_EVENTS");
         unsetenv("KO_IOS");
