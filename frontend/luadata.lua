@@ -75,7 +75,15 @@ function LuaData:open(file_path, name)
 
     local function loadDataFile(path)
         if hardened_offline then
-            return SafeSettings.runFile(path, data_env)
+            -- Handlers mutate new.data, so make each primary/backup attempt
+            -- transactional and discard partial entries after any error.
+            new.data = {}
+            local ok, err = SafeSettings.runFile(path, data_env)
+            if ok then
+                ok, err = SafeSettings.validatePlainData(new.data)
+            end
+            if not ok then new.data = {} end
+            return ok, err
         end
         local chunk, err = loadfile(path, "t", data_env)
         if not chunk then return false, err end
