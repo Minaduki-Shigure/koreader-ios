@@ -148,6 +148,7 @@ reject_source "${PLIST}" '<key>CFBundleDocumentTypes</key>'
 
 # Every native bridge function called through ffi.C remains explicitly exported.
 require_source "${PROJECT}" '_ko_ios_import_document_start'
+require_source "${PROJECT}" 'ENABLE_DEBUG_DYLIB: NO'
 require_source "${PROJECT}" '_ko_ios_import_document_poll'
 require_source "${PROJECT}" '_ko_ios_get_safe_area_pixels'
 

@@ -168,6 +168,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            ENABLE_DEBUG_DYLIB=NO \
             ENABLE_USER_SCRIPT_SANDBOXING=NO \
             build 2>&1 | tee artifacts/logs/xcodebuild-ios.log
 
@@ -192,6 +193,10 @@ jobs:
           }
 
           test -x "${app}/KOReader"
+          if find "${app}" -type f -name '*.debug.dylib' -print -quit | grep -q .; then
+            echo "error: Xcode debug dylib split is enabled" >&2
+            exit 1
+          fi
           test -f "${app}/app/reader.lua"
           test -f "${app}/app/libs/libkoreader-monolibtic.dylib"
           test -f "${app}/app/libs/libluajit.dylib"
