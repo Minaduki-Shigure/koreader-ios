@@ -108,6 +108,17 @@ See [Building](https://github.com/koreader/koreader/blob/master/doc/Building.md)
 ./kodev release macos
 ```
 
+### iOS / iPadOS
+
+The experimental iOS target generates an Xcode project rather than using the
+normal `./kodev release <target>` packaging path. See
+[Building_iOS.md](Building_iOS.md) for the complete setup and limitations.
+
+```
+make TARGET=ios xcodeproj
+open KOReader.xcodeproj
+```
+
 ### e-Ink devices
 
 #### Cervantes

@@ -1,5 +1,20 @@
 [![KOReader](https://raw.githubusercontent.com/koreader/koreader.github.io/master/koreader-logo.png)](https://koreader.rocks)
 
+> ## Experimental iOS / iPadOS port
+>
+> This branch carries an experimental iPhone and iPad target. It produces an
+> unsigned device build suitable for external signing tools such as SideStore,
+> or an Xcode project for locally signed development builds. The current port
+> is device-only (`arm64`) and uses LuaJIT in interpreter-only mode because the
+> iOS sandbox does not permit JIT memory mappings.
+>
+> ```sh
+> make TARGET=ios xcodeproj
+> ```
+>
+> See [`doc/Building_iOS.md`](doc/Building_iOS.md) for prerequisites, headless
+> builds, bundle layout, and known limitations.
+
 #### KOReader is a document viewer primarily aimed at e-ink readers.
 
 [![AGPL Licence][badge-license]](COPYING)
