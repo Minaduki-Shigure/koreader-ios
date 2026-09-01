@@ -36,7 +36,7 @@ jobs:
       PARALLEL_JOBS: "4"
       AUDITED_PARENT_BASE: a7cf2a98a28c6e70fb33087549bfb4a734ed19bc
       PINNED_BASE_COMMIT: 6e4bafc0a0619cd69e0961933524581ebed9ef0d
-      DERIVED_DATA: ${{ runner.temp }}/KOReaderDerivedData
+      DERIVED_DATA: build/DerivedData
 
     steps:
       - name: Checkout pinned sources
