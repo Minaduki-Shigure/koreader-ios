@@ -420,10 +420,12 @@ function BookInfoManager:getDocProps(filepath)
 end
 
 function BookInfoManager:extractBookInfo(filepath, cover_specs)
-    -- This will be run in a subprocess
-    -- We use a temporary directory for cre cache (that will not affect parent process),
-    -- so we don't fill the main cache with books we're not actually reading
-    if not self.cre_cache_overriden then
+    -- This normally runs in a subprocess, where a temporary crengine cache
+    -- cannot affect the reader process. iOS cannot fork and runs extraction
+    -- inline, so it must keep the existing process-wide cache configuration.
+    -- Switching it here would leave the reader pointing at tmpcr3cache after
+    -- extraction, and cleanUp() would then delete that live cache directory.
+    if os.getenv("KO_IOS") ~= "1" and not self.cre_cache_overriden then
         -- We need to init engine (if no crengine book has yet been opened),
         -- so it does not reset our temporary cache dir when we first open
         -- a crengine book for extraction.
@@ -747,7 +749,6 @@ function BookInfoManager:extractInBackground(files)
     BookInfoManager:closeDbConnection()
 
     if os.getenv("KO_IOS") == "1" then
-        self.cleanup_needed = true
         self._ios_chunk_state = { index = 1, files = files }
         self._ios_chunk_action = function()
             self:_iosProcessNextChunk()
