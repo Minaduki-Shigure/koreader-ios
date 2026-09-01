@@ -1,4 +1,5 @@
 local UIManager = require("ui/uimanager")
+local Device = require("device")
 
 local HTTPClient = {
     input_timeouts = 0,
@@ -12,6 +13,7 @@ function HTTPClient:new()
 end
 
 function HTTPClient:request(request, response_callback)
+    if Device:isHardenedOffline() then return false end
     request.connect_timeout = 10
     request.request_timeout = 20
     UIManager:initLooper()

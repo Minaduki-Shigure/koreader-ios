@@ -271,5 +271,19 @@ local order = {
 if not Device:hasExitOptions() then
     order.exit_menu = nil
 end
+if Device:isHardenedOffline() then
+    order.network = nil
+    order.search_settings = {
+        "dictionary_settings",
+        "----------------------------",
+        "fulltext_search_settings",
+    }
+    order.more_tools = {
+        "battery_statistics",
+        "book_shortcuts",
+        "----------------------------",
+        "plugin_management",
+    }
+end
 
 return order

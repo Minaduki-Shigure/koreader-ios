@@ -5,7 +5,7 @@ local Event = require("ui/event")
 local FileManagerBookInfo = require("apps/filemanager/filemanagerbookinfo")
 local InfoMessage = require("ui/widget/infomessage")
 local Language = require("ui/language")
-local NetworkMgr = require("ui/network/manager")
+local NetworkMgr = not Device:isHardenedOffline() and require("ui/network/manager")
 local PowerD = Device:getPowerDevice()
 local UIManager = require("ui/uimanager")
 local filemanagerutil = require("apps/filemanager/filemanagerutil")
@@ -270,10 +270,12 @@ common_settings.night_mode = {
         UIManager:broadcastEvent(Event:new("ToggleNightMode"))
     end
 }
-common_settings.network = {
-    text = _("Network"),
-}
-NetworkMgr:getMenuTable(common_settings)
+if NetworkMgr then
+    common_settings.network = {
+        text = _("Network"),
+    }
+    NetworkMgr:getMenuTable(common_settings)
+end
 
 common_settings.screen = {
     text = _("Screen"),
@@ -762,6 +764,11 @@ common_settings.document_metadata_arc = {
     separator = true,
 }
 
+if Device:isHardenedOffline() then
+    common_settings.document_metadata_location = nil
+    common_settings.document_metadata_arc = nil
+end
+
 common_settings.document_end_action = {
     text = _("End of document action"),
     sub_item_table = {
@@ -838,7 +845,8 @@ common_settings.units = {
     }
 }
 
-if Device:isTouchDevice() or Device:hasKeyboard() or Device:hasScreenKB() then
+if not Device:isHardenedOffline()
+        and (Device:isTouchDevice() or Device:hasKeyboard() or Device:hasScreenKB()) then
     common_settings.screenshot = {
         text = _("Screenshot folder"),
         callback = function()

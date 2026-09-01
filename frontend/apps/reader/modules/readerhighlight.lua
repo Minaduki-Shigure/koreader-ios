@@ -12,7 +12,7 @@ local InputContainer = require("ui/widget/container/inputcontainer")
 local Notification = require("ui/widget/notification")
 local SpinWidget = require("ui/widget/spinwidget")
 local TextViewer = require("ui/widget/textviewer")
-local Translator = require("ui/translator")
+local Translator = not Device:isHardenedOffline() and require("ui/translator")
 local UIManager = require("ui/uimanager")
 local ffiUtil = require("ffi/util")
 local logger = require("logger")
@@ -188,6 +188,11 @@ function ReaderHighlight:init()
             }
         end,
     }
+    if Device:isHardenedOffline() then
+        self._highlight_buttons["05_wikipedia"] = nil
+        self._highlight_buttons["06_dictionary"] = nil
+        self._highlight_buttons["07_translate"] = nil
+    end
 
     -- Android devices
     if Device:canShareText() then
@@ -367,11 +372,13 @@ local long_press_action = {
     {_("Highlight"), "highlight"},
     {_("Select and highlight"), "select"},
     {_("Add note"), "note"},
-    {_("Translate"), "translate"},
-    {_("Wikipedia"), "wikipedia"},
-    {_("Dictionary"), "dictionary"},
     {_("Fulltext search"), "search"},
 }
+if not Device:isHardenedOffline() then
+    table.insert(long_press_action, 6, {_("Translate"), "translate"})
+    table.insert(long_press_action, 7, {_("Wikipedia"), "wikipedia"})
+    table.insert(long_press_action, 8, {_("Dictionary"), "dictionary"})
+end
 -- we need to expose this table to readerkeyselection
 -- as here it is hidden under a isTouchDevice cap
 ReaderHighlight.long_press_action = long_press_action
@@ -874,13 +881,15 @@ Except when in two columns mode, where this is limited to showing only the previ
     })
 
     -- main menu Search
-    menu_items.translation_settings = Translator:genSettingsMenu()
-    menu_items.translate_current_page = {
-        text = _("Translate current page"),
-        callback = function()
-            self:onTranslateCurrentPage()
-        end,
-    }
+    if Translator then
+        menu_items.translation_settings = Translator:genSettingsMenu()
+        menu_items.translate_current_page = {
+            text = _("Translate current page"),
+            callback = function()
+                self:onTranslateCurrentPage()
+            end,
+        }
+    end
 end
 
 function ReaderHighlight:genPanelZoomMenu()
@@ -1921,6 +1930,7 @@ You can download language data files for Tesseract version 5.3.4 from https://te
 Copy the language data files (e.g., eng.traineddata for English and spa.traineddata for Spanish) into koreader/data/tessdata]])
 
 function ReaderHighlight:lookupDictWord()
+    if not self.ui.dictionary then return false end
     -- convert sboxes to word boxes
     local word_boxes = {}
     for i, sbox in ipairs(self.selected_text.sboxes) do
@@ -1975,6 +1985,7 @@ function ReaderHighlight:viewSelectionHTML(debug_view, no_css_files_buttons)
 end
 
 function ReaderHighlight:translate(index)
+    if not Translator then return false end
     if self.ui.rolling then
         -- Extend the selected text to include any punctuation at start or end,
         -- which may give a better translation with the added context.
@@ -2003,10 +2014,12 @@ function ReaderHighlight:translate(index)
 end
 
 function ReaderHighlight:onTranslateText(text, index)
+    if not Translator then return false end
     Translator:showTranslation(text, true, nil, nil, true, index)
 end
 
 function ReaderHighlight:onTranslateCurrentPage()
+    if not Translator then return false end
     local x0, y0, x1, y1, page, is_reflow
     if self.ui.rolling then
         x0 = 0
@@ -2047,6 +2060,12 @@ function ReaderHighlight:onHoldRelease()
     self:_resetHoldTimer(true) -- clear state
 
     local default_highlight_action = G_reader_settings:readSetting("default_highlight_action", "ask")
+    if Device:isHardenedOffline()
+            and (default_highlight_action == "dictionary"
+                or default_highlight_action == "translate"
+                or default_highlight_action == "wikipedia") then
+        default_highlight_action = "ask"
+    end
 
     if self.select_mode then -- extended highlighting, ending fragment
         if self.selected_text then
@@ -2278,6 +2297,7 @@ function ReaderHighlight:writePdfAnnotation(action, item, content)
 end
 
 function ReaderHighlight:lookupWikipedia()
+    if Device:isHardenedOffline() then return false end
     if self.selected_text then
         self.ui:handleEvent(Event:new("LookupWikipedia", util.cleanupSelectedText(self.selected_text.text)))
     end
@@ -2298,6 +2318,7 @@ function ReaderHighlight:onHighlightSearch()
 end
 
 function ReaderHighlight:lookupDict(index)
+    if not self.ui.dictionary then return false end
     logger.dbg("dictionary lookup highlight")
     self:highlightFromHoldPos()
     if self.selected_text then

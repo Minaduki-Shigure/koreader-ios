@@ -126,7 +126,7 @@ local ScrollTextWidget = require("ui/widget/scrolltextwidget")
 local Size = require("ui/size")
 local TextWidget = require("ui/widget/textwidget")
 local TitleBar = require("ui/widget/titlebar")
-local Translator = require("ui/translator")
+local Translator = not Device:isHardenedOffline() and require("ui/translator")
 local Presets = require("ui/presets")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
@@ -727,6 +727,7 @@ function DictQuickLookup:_getButtonPool()
             id = "save",
             text = _("Save as EPUB"),
             callback = function()
+                if Device:isHardenedOffline() then return false end
                 local InfoMessage = require("ui/widget/infomessage")
                 local ConfirmBox = require("ui/widget/confirmbox")
                 -- We should have a self.lang set, but let's have a fallback
@@ -859,7 +860,9 @@ function DictQuickLookup:_getButtonPool()
             text = _("Translate"),
             enabled = not self:isDocless(),
             callback = function()
-                Translator:showTranslation(self.lookupword, true)
+                if Translator then
+                    Translator:showTranslation(self.lookupword, true)
+                end
             end,
         },
         -- Allow selecting a different wikipedia language, or Search in book if dict window
@@ -928,6 +931,10 @@ function DictQuickLookup:_getButtonPool()
             end
         },
     }
+    if Device:isHardenedOffline() then
+        pool.wikipedia = nil
+        pool.translate = nil
+    end
     return pool
 end
 
@@ -1852,7 +1859,9 @@ function DictQuickLookup:lookupInputWord(hint)
             },
             -- 'Search with preset' will be inserted here
         },
-        {
+    }
+    if Translator then
+        table.insert(buttons, {
             {
                 text = _("Translate"),
                 callback = function()
@@ -1875,8 +1884,9 @@ function DictQuickLookup:lookupInputWord(hint)
                     end
                 end,
             },
-        },
-        {
+        })
+    end
+    table.insert(buttons, {
             {
                 text = _("Cancel"),
                 id = "close",
@@ -1896,8 +1906,7 @@ function DictQuickLookup:lookupInputWord(hint)
                     end
                 end,
             },
-        },
-    }
+        })
     local preset_names = Presets.getPresets(self.ui.dictionary.preset_obj)
     if preset_names and #preset_names > 0 then
         table.insert(buttons[1], {
@@ -1946,6 +1955,7 @@ function DictQuickLookup:lookupInputWord(hint)
 end
 
 function DictQuickLookup:lookupWikipedia(get_fullpage, word, is_sane, lang, dict_close_callback)
+    if Device:isHardenedOffline() then return false end
     if not lang then
         -- Use the language of the current or nearest is_wiki DictQuickLookup.
         -- Otherwise, LookupWikipedia will use wiki_last_language
@@ -2495,7 +2505,9 @@ function DictQuickLookup:lookupDictionaryOrWikipedia(selected_text, switch_domai
     if not selected_text then return false end
     local new_dict_close_callback = function() self:clearDictionaryHighlight() end
     local use_wiki = self.is_wiki
+    if Device:isHardenedOffline() then use_wiki = false end
     if switch_domain then use_wiki = not use_wiki end
+    if Device:isHardenedOffline() then use_wiki = false end
     if use_wiki then
         self:lookupWikipedia(false, selected_text, nil, nil, new_dict_close_callback)
     else

@@ -531,6 +531,7 @@ function ReaderMenu:registerToMainMenu(widget)
 end
 
 function ReaderMenu:onShowCloudStorage()
+    if Device:isHardenedOffline() then return false end
     local CloudStorage = require("apps/cloudstorage/cloudstorage")
     UIManager:show(CloudStorage:new{ ui = self.ui })
     return true

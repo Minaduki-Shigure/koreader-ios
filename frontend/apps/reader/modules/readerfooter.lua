@@ -555,6 +555,9 @@ function ReaderFooter:init()
     self.additional_footer_content = {} -- array, where additional header content can be inserted.
 
     -- Remove items not supported by the current device
+    if Device:isHardenedOffline() then
+        self.settings.wifi_status = false
+    end
     if not Device:hasFastWifiStatusQuery() then
         MODE.wifi_status = nil
     end

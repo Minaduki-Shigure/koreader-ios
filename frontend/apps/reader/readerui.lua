@@ -12,6 +12,7 @@ local Device = require("device")
 local DeviceListener = require("device/devicelistener")
 local DocCache = require("document/doccache")
 local DocSettings = require("docsettings")
+local DocumentPathPolicy = require("document/documentpathpolicy")
 local DocumentRegistry = require("document/documentregistry")
 local Event = require("ui/event")
 local FileManagerBookInfo = require("apps/filemanager/filemanagerbookinfo")
@@ -23,7 +24,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local InputDialog = require("ui/widget/inputdialog")
 local LanguageSupport = require("languagesupport")
-local NetworkListener = require("ui/network/networklistener")
+local NetworkListener = not Device:isHardenedOffline() and require("ui/network/networklistener")
 local Notification = require("ui/widget/notification")
 local PluginLoader = require("pluginloader")
 local ReaderActivityIndicator = require("apps/reader/modules/readeractivityindicator")
@@ -34,7 +35,7 @@ local ReaderConfig = require("apps/reader/modules/readerconfig")
 local ReaderCoptListener = require("apps/reader/modules/readercoptlistener")
 local ReaderCropping = require("apps/reader/modules/readercropping")
 local ReaderDeviceStatus = require("apps/reader/modules/readerdevicestatus")
-local ReaderDictionary = require("apps/reader/modules/readerdictionary")
+local ReaderDictionary = not Device:isHardenedOffline() and require("apps/reader/modules/readerdictionary")
 local ReaderFont = require("apps/reader/modules/readerfont")
 local ReaderGoto = require("apps/reader/modules/readergoto")
 local ReaderHandMade = require("apps/reader/modules/readerhandmade")
@@ -58,7 +59,7 @@ local ReaderTypeset = require("apps/reader/modules/readertypeset")
 local ReaderTypography = require("apps/reader/modules/readertypography")
 local ReaderUserHyph = require("apps/reader/modules/readeruserhyph")
 local ReaderView = require("apps/reader/modules/readerview")
-local ReaderWikipedia = require("apps/reader/modules/readerwikipedia")
+local ReaderWikipedia = not Device:isHardenedOffline() and require("apps/reader/modules/readerwikipedia")
 local ReaderZooming = require("apps/reader/modules/readerzooming")
 local Screenshoter = require("ui/widget/screenshoter")
 local SettingsMigration = require("ui/data/settings_migration")
@@ -216,19 +217,22 @@ function ReaderUI:init()
         document = self.document,
     })
     -- dictionary
-    self:registerModule("dictionary", ReaderDictionary:new{
-        dialog = self.dialog,
-        view = self.view,
-        ui = self,
-        document = self.document,
-    })
-    -- wikipedia
-    self:registerModule("wikipedia", ReaderWikipedia:new{
-        dialog = self.dialog,
-        view = self.view,
-        ui = self,
-        document = self.document,
-    })
+    if ReaderDictionary then
+        self:registerModule("dictionary", ReaderDictionary:new{
+            dialog = self.dialog,
+            view = self.view,
+            ui = self,
+            document = self.document,
+        })
+    end
+    if ReaderWikipedia then
+        self:registerModule("wikipedia", ReaderWikipedia:new{
+            dialog = self.dialog,
+            view = self.view,
+            ui = self,
+            document = self.document,
+        })
+    end
     -- text selection with cursor keys
     self:registerModule("keyselection", ReaderKeySelection:new{
         dialog = self.dialog,
@@ -454,11 +458,13 @@ function ReaderUI:init()
         view = self.view,
         ui = self,
     })
-    self:registerModule("networklistener", NetworkListener:new {
-        document = self.document,
-        view = self.view,
-        ui = self,
-    })
+    if NetworkListener then
+        self:registerModule("networklistener", NetworkListener:new {
+            document = self.document,
+            view = self.view,
+            ui = self,
+        })
+    end
 
     -- koreader plugins
     for _, plugin_module in ipairs(PluginLoader:loadPlugins()) do
@@ -615,6 +621,15 @@ end
 ---        (i.e., don't look at the testsuite, which resorts to all kinds of nasty hacks).
 function ReaderUI:showReader(file, provider, seamless, is_provider_forced, after_open_callback)
     logger.dbg("show reader ui")
+
+    local resolved_file = DocumentPathPolicy:resolveDocument(file)
+    if not resolved_file then
+        UIManager:show(InfoMessage:new{
+            text = _("This hardened build can only open documents from Books."),
+        })
+        return
+    end
+    file = resolved_file
 
     if lfs.attributes(file, "mode") ~= "file" then
         UIManager:show(InfoMessage:new{

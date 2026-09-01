@@ -35,7 +35,7 @@ local Event = require("ui/event")
 local FileManager = require("apps/filemanager/filemanager")
 local Key = require("device/key")
 local Notification = require("ui/widget/notification")
-local ReaderDictionary = require("apps/reader/modules/readerdictionary")
+local ReaderDictionary = not Device:isHardenedOffline() and require("apps/reader/modules/readerdictionary")
 local ReaderFooter = require("apps/reader/modules/readerfooter")
 local ReaderHighlight = require("apps/reader/modules/readerhighlight")
 local ReaderTypography = require("apps/reader/modules/readertypography")
@@ -68,10 +68,10 @@ local settingsList = {
     book_metadata_archive = {category="none", event="ShowBookMetadataArchive", title=_("Book metadata archive"), general=true},
     bookmark_browser = {category="none", event="ShowBookmarkBrowser", title=_("Bookmark browser"), general=true, separator=true},
     ----
-    dictionary_lookup = {category="none", event="ShowDictionaryLookup", title=_("Dictionary lookup"), general=true},
-    load_dictionary_preset = {category="string", event="LoadDictionaryPreset", title=_("Load dictionary preset"), args_func=ReaderDictionary.getPresets, general=true},
-    cycle_dictionary_preset = {category="none", event="CycleDictionaryPresets", title=_("Cycle through dictionary presets"), general=true,},
-    wikipedia_lookup = {category="none", event="ShowWikipediaLookup", title=_("Wikipedia lookup"), general=true, separator=true},
+    dictionary_lookup = {category="none", event="ShowDictionaryLookup", title=_("Dictionary lookup"), general=true, condition=not Device:isHardenedOffline()},
+    load_dictionary_preset = {category="string", event="LoadDictionaryPreset", title=_("Load dictionary preset"), args_func=ReaderDictionary and ReaderDictionary.getPresets, general=true, condition=not Device:isHardenedOffline()},
+    cycle_dictionary_preset = {category="none", event="CycleDictionaryPresets", title=_("Cycle through dictionary presets"), general=true, condition=not Device:isHardenedOffline()},
+    wikipedia_lookup = {category="none", event="ShowWikipediaLookup", title=_("Wikipedia lookup"), general=true, separator=true, condition=not Device:isHardenedOffline()},
     ----
     show_menu = {category="none", event="ShowMenu", title=_("Show menu"), general=true},
     menu_search = {category="none", event="MenuSearch", title=_("Menu search"), general=true},
@@ -88,7 +88,7 @@ local settingsList = {
     restart = {category="none", event="Restart", title=_("Restart KOReader"), device=true, condition=Device:canRestart()},
     reboot = {category="none", event="RequestReboot", title=_("Reboot the device"), device=true, condition=Device:canReboot()},
     poweroff = {category="none", event="RequestPowerOff", title=_("Power off"), device=true, condition=Device:canPowerOff()},
-    exit = {category="none", event="Exit", title=_("Exit KOReader"), device=true, separator=true},
+    exit = {category="none", event="Exit", title=_("Exit KOReader"), device=true, separator=true, condition=not Device:isHardenedOffline()},
     ----
     toggle_hold_corners = {category="none", event="IgnoreHoldCorners", title=_("Toggle long-press on corners"), device=true, condition=Device:isTouchDevice()},
     ignore_hold_corners = {category="absolutenumber", event="IgnoreHoldCornersTime", default=10, min=5, max=30, unit=C_("Time", "s"), title=_("Ignore long-press on corners"), device=true, separator=true, condition=Device:isTouchDevice()},
@@ -116,7 +116,7 @@ local settingsList = {
     wifi_off = {category="none", event="InfoWifiOff", title=_("Turn off Wi-Fi"), device=true, condition=Device:hasWifiToggle()},
     toggle_wifi = {category="none", event="ToggleWifi", title=_("Toggle Wi-Fi"), device=true, condition=Device:hasWifiToggle()},
     toggle_fullscreen = {category="none", event="ToggleFullscreen", title=_("Toggle Fullscreen"), device=true, condition=not Device:isAlwaysFullscreen()},
-    show_network_info = {category="none", event="ShowNetworkInfo", title=_("Show network info"), device=true, separator=true},
+    show_network_info = {category="none", event="ShowNetworkInfo", title=_("Show network info"), device=true, separator=true, condition=not Device:isHardenedOffline()},
     ----
 
     -- Screen and lights
@@ -161,7 +161,7 @@ local settingsList = {
     fm_go_to = {category="none", event="ShowGotoDialog", title=_("Go to page"), filemanager=true},
     fm_back = {category="none", event="Back", title=_("Back"), filemanager=true, separator=true},
     ----
-    cloud_storage = {category="none", event="ShowCloudStorage", title=_("Cloud storage"), filemanager=true},
+    cloud_storage = {category="none", event="ShowCloudStorage", title=_("Cloud storage"), filemanager=true, condition=not Device:isHardenedOffline()},
 
     -- Reader
     show_config_menu = {category="none", event="ShowConfigMenu", title=_("Show bottom menu"), reader=true},
@@ -213,7 +213,7 @@ local settingsList = {
     book_description = {category="none", event="ShowBookDescription", title=_("Book description"), reader=true},
     book_cover = {category="none", event="ShowBookCover", title=_("Book cover"), reader=true, separator=true},
     ----
-    translate_page = {category="none", event="TranslateCurrentPage", title=_("Translate current page"), reader=true, separator=true},
+    translate_page = {category="none", event="TranslateCurrentPage", title=_("Translate current page"), reader=true, separator=true, condition=not Device:isHardenedOffline()},
     ----
     set_inverse_reading_order = {category="string", event="ToggleReadingOrder", title=_("Invert page turn taps and swipes"), reader=true, condition=Device:isTouchDevice(), args={true, false}, toggle={_("on"), _("off")}},
     toggle_inverse_reading_order = {category="none", event="ToggleReadingOrder", title=_("Toggle page turn direction"), reader=true, condition=Device:isTouchDevice()},
@@ -573,6 +573,16 @@ local dispatcher_menu_order = {
     "kopt_max_columns",
     "kopt_auto_straighten",
 }
+
+if Device:isHardenedOffline() then
+    for i = #dispatcher_menu_order, 1, -1 do
+        local name = dispatcher_menu_order[i]
+        if name == "dictionary_lookup" or name == "load_dictionary_preset"
+                or name == "cycle_dictionary_preset" then
+            table.remove(dispatcher_menu_order, i)
+        end
+    end
+end
 
 --[[--
     add settings from CreOptions / KoptOptions

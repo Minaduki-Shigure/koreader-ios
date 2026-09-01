@@ -27,7 +27,7 @@ local NetworkListener = not Device:isHardenedOffline() and require("ui/network/n
 local PluginLoader = require("pluginloader")
 local ReadCollection = require("readcollection")
 local ReaderDeviceStatus = require("apps/reader/modules/readerdevicestatus")
-local ReaderDictionary = require("apps/reader/modules/readerdictionary")
+local ReaderDictionary = not Device:isHardenedOffline() and require("apps/reader/modules/readerdictionary")
 local ReaderWikipedia = not Device:isHardenedOffline() and require("apps/reader/modules/readerwikipedia")
 local ReadHistory = require("readhistory")
 local Screenshoter = require("ui/widget/screenshoter")
@@ -251,6 +251,10 @@ function FileManager:setupLayout()
             },
             {}, -- separator
         }
+        if Device:isHardenedOffline() then
+            buttons[1] = { buttons[1][2] } -- Select
+            buttons[2] = { buttons[2][1] } -- Delete
+        end
 
         local book_props
         if is_file then
@@ -416,7 +420,9 @@ function FileManager:init()
     self:registerModule("filesearcher", FileManagerFileSearcher:new{ ui = self })
     self:registerModule("folder_shortcuts", FileManagerShortcuts:new{ ui = self })
     self:registerModule("languagesupport", LanguageSupport:new{ ui = self })
-    self:registerModule("dictionary", ReaderDictionary:new{ ui = self })
+    if ReaderDictionary then
+        self:registerModule("dictionary", ReaderDictionary:new{ ui = self })
+    end
     if ReaderWikipedia then
         self:registerModule("wikipedia", ReaderWikipedia:new{ ui = self })
     end
@@ -659,6 +665,9 @@ function FileManager:getPlusDialogButtons()
                 self.folder_shortcuts:genShowFolderShortcutsButton(close_dialog_callback),
             },
         }
+        if Device:isHardenedOffline() then
+            buttons[1] = { buttons[1][1] } -- Delete
+        end
 
         local refresh_button = self.coverbrowser
             and self.coverbrowser:genMultipleRefreshBookInfoButton(close_dialog_toggle_select_mode_callback, not actions_enabled)
@@ -741,6 +750,9 @@ function FileManager:getPlusDialogButtons()
                 self.folder_shortcuts:genAddRemoveShortcutButton(folder, close_dialog_callback, refresh_titlebar_callback),
             },
         }
+        if Device:isHardenedOffline() then
+            table.remove(buttons, 3) -- Paste
+        end
 
         if Device:hasExternalSD() then
             table.insert(buttons, 4, { -- after "Paste" or "Import files here" button
@@ -937,16 +949,19 @@ function FileManager:openRandomFile(dir, unopened_only)
 end
 
 function FileManager:copyFile(file)
+    if Device:isHardenedOffline() then return false end
     self.cutfile = false
     self.clipboard = file
 end
 
 function FileManager:cutFile(file)
+    if Device:isHardenedOffline() then return false end
     self.cutfile = true
     self.clipboard = file
 end
 
 function FileManager:pasteFileFromClipboard(file)
+    if Device:isHardenedOffline() then return false end
     local orig_file = ffiUtil.realpath(self.clipboard)
     local orig_name = ffiUtil.basename(orig_file)
     local dest_path = ffiUtil.realpath(file or self.file_chooser.path)
@@ -1016,6 +1031,7 @@ function FileManager:pasteFileFromClipboard(file)
 end
 
 function FileManager:showCopyMoveSelectedFilesDialog(close_callback, folder)
+    if Device:isHardenedOffline() then return false end
     local text, ok_text
     if self.cutfile then
         text = folder and _("Move selected files?") or _("Move selected files to the current folder?")
@@ -1043,6 +1059,7 @@ function FileManager:showCopyMoveSelectedFilesDialog(close_callback, folder)
 end
 
 function FileManager:pasteSelectedFiles(overwrite, folder)
+    if Device:isHardenedOffline() then return false end
     local dest_path = ffiUtil.realpath(folder or self.file_chooser.path)
     local ok_files = {}
     for orig_file in pairs(self.selected_files) do
@@ -1109,7 +1126,9 @@ function FileManager:createFolder()
                         local new_folder_name = input_dialog:getInputText()
                         if new_folder_name == "" then return end
                         UIManager:close(input_dialog)
-                        local new_folder = string.format("%s/%s", self.file_chooser.path, new_folder_name)
+                        local new_folder = filemanagerutil.resolveWritePath(
+                            string.format("%s/%s", self.file_chooser.path, new_folder_name), true)
+                        if not new_folder then return end
                         if util.makePath(new_folder) then
                             if check_button_enter_folder.checked then
                                 self.file_chooser:changeToPath(new_folder)
@@ -1138,7 +1157,7 @@ function FileManager:createFolder()
 end
 
 function FileManager:showDeleteFileDialog(filepath, post_delete_callback, pre_delete_callback)
-    local file = ffiUtil.realpath(filepath)
+    local file = filemanagerutil.resolveMutablePath(filepath)
     if file == nil then
         UIManager:show(InfoMessage:new{
             text = T(_("File not found:\n%1"), BD.filepath(filepath)),
@@ -1185,18 +1204,53 @@ function FileManager.addMetadataArcCheckButton(confirmbox)
     })
 end
 
+local function purgeHardenedDirectory(path)
+    for entry in lfs.dir(path) do
+        if entry ~= "." and entry ~= ".." then
+            local child = ffiUtil.joinPath(path, entry)
+            local mode = lfs.symlinkattributes(child, "mode")
+            local ok
+            if mode == "directory" then
+                child = filemanagerutil.resolveMutablePath(child)
+                ok = child and purgeHardenedDirectory(child)
+            elseif mode == "file" then
+                local doc_settings = DocSettings:open(child)
+                ok = os.remove(child)
+                if ok then doc_settings:purge() end
+            elseif mode then
+                ok = os.remove(child)
+            end
+            if not ok then return false end
+        end
+    end
+    return os.remove(path) and true or false
+end
+
 function FileManager:deleteFile(file, is_file)
+    file = filemanagerutil.resolveMutablePath(file, true)
+    if not file then return false end
+
     if is_file then
+        local doc_settings = Device:isHardenedOffline() and DocSettings:open(file)
         local ok = os.remove(file)
         if ok then
             BookList.resetBookInfoCache(file)
-            DocSettings.updateLocation(file) -- delete sdr
+            if doc_settings then
+                doc_settings:purge()
+            else
+                DocSettings.updateLocation(file) -- delete sdr
+            end
             ReadHistory:fileDeleted(file)
             ReadCollection:removeItem(file)
             return true
         end
     else
-        local ok = ffiUtil.purgeDir(file)
+        local ok
+        if Device:isHardenedOffline() then
+            ok = purgeHardenedDirectory(file)
+        else
+            ok = ffiUtil.purgeDir(file)
+        end
         if ok then
             ReadHistory:folderDeleted(file) -- will delete sdr
             ReadCollection:removeItemsByPath(file)
@@ -1213,11 +1267,16 @@ end
 function FileManager:deleteSelectedFiles()
     local ok_files = {}
     for orig_file in pairs(self.selected_files) do
-        local file_abs_path = ffiUtil.realpath(orig_file)
+        local file_abs_path = filemanagerutil.resolveMutablePath(orig_file)
+        local doc_settings = file_abs_path and Device:isHardenedOffline() and DocSettings:open(file_abs_path)
         local ok = file_abs_path and os.remove(file_abs_path)
         if ok then
             BookList.resetBookInfoCache(file_abs_path)
-            DocSettings.updateLocation(file_abs_path) -- delete sdr
+            if doc_settings then
+                doc_settings:purge()
+            else
+                DocSettings.updateLocation(file_abs_path) -- delete sdr
+            end
             ok_files[orig_file] = true
             self.selected_files[orig_file] = nil
         end
@@ -1241,6 +1300,7 @@ function FileManager:deleteSelectedFiles()
 end
 
 function FileManager:showRenameFileDialog(file, is_file)
+    if Device:isHardenedOffline() then return false end
     local dialog
     dialog = InputDialog:new{
         title = is_file and _("Rename file") or _("Rename folder"),
@@ -1270,6 +1330,7 @@ function FileManager:showRenameFileDialog(file, is_file)
 end
 
 function FileManager:renameFile(file, basename, is_file)
+    if Device:isHardenedOffline() then return false end
     if ffiUtil.basename(file) == basename then return end
     local dest = ffiUtil.joinPath(ffiUtil.dirname(file), basename)
 
@@ -1341,6 +1402,15 @@ function FileManager:showFiles(path, focused_file, selected_files)
     if focused_file and not filemanagerutil.isPathInsideHome(focused_file) then
         focused_file = nil
     end
+    if Device:isHardenedOffline() and selected_files then
+        local allowed_files = {}
+        for selected_file, selected in pairs(selected_files) do
+            if filemanagerutil.isPathInsideHome(selected_file) then
+                allowed_files[selected_file] = selected
+            end
+        end
+        selected_files = allowed_files
+    end
     G_reader_settings:saveSetting("lastdir", path)
     self:setRotationMode()
     local file_manager = FileManager:new{
@@ -1356,18 +1426,21 @@ end
 --- A shortcut to execute mv.
 -- @treturn boolean result of mv command
 function FileManager:moveFile(from, to)
+    if Device:isHardenedOffline() then return false end
     return ffiUtil.execute(self.mv_bin, from, to) == 0
 end
 
 --- A shortcut to execute cp.
 -- @treturn boolean result of cp command
 function FileManager:copyFileFromTo(from, to)
+    if Device:isHardenedOffline() then return false end
     return ffiUtil.execute(self.cp_bin, from, to) == 0
 end
 
 --- A shortcut to execute cp recursively.
 -- @treturn boolean result of cp command
 function FileManager:copyRecursive(from, to)
+    if Device:isHardenedOffline() then return false end
     return ffiUtil.execute(self.cp_bin, "-r", from, to ) == 0
 end
 
@@ -1391,7 +1464,8 @@ function FileManager:onShowFolderMenu()
     local curr_path = self.file_chooser.path
     local home_dir = filemanagerutil.getHomeFolder()
     local home_dir_shortened = G_reader_settings:nilOrTrue("shorten_home_dir")
-    local home_dir_not_locked = G_reader_settings:nilOrFalse("lock_home_folder")
+    local home_dir_not_locked = not Device:isHardenedOffline()
+        and G_reader_settings:nilOrFalse("lock_home_folder")
     local home_dir_suffix = "  \u{f015}" -- "home" character
     local buttons = {}
     -- root folder
@@ -1636,6 +1710,9 @@ function FileManager:showOpenWithDialog(file)
 end
 
 function FileManager:openFile(file, provider, doc_caller_callback, aux_caller_callback, after_open_callback)
+    file = filemanagerutil.resolveDocumentPath(file, true)
+    if not file then return end
+
     local is_provider_forced
     if provider then -- called from Open with… dialog
         is_provider_forced = true

@@ -17,7 +17,9 @@ local C = ffi.C
 local T = ffiutil.template
 
 -- We'll need a bunch of stuff for getifaddrs in NetworkMgr:ifHasAnAddress
-require("ffi/posix_h")
+if not Device:isHardenedOffline() then
+    require("ffi/posix_h")
+end
 
 -- We unfortunately don't have that one in ffi/posix_h :/
 local EBUSY = 16
@@ -1292,10 +1294,12 @@ function NetworkMgr:setWirelessBackend(name, options)
     require("ui/network/"..name).init(self, options)
 end
 
-if G_reader_settings:readSetting("http_proxy_enabled") and G_reader_settings:readSetting("http_proxy") then
-    NetworkMgr:setHTTPProxy(G_reader_settings:readSetting("http_proxy"))
-elseif G_defaults:readSetting("NETWORK_PROXY") then
-    NetworkMgr:setHTTPProxy(G_defaults:readSetting("NETWORK_PROXY"))
+if not Device:isHardenedOffline() then
+    if G_reader_settings:readSetting("http_proxy_enabled") and G_reader_settings:readSetting("http_proxy") then
+        NetworkMgr:setHTTPProxy(G_reader_settings:readSetting("http_proxy"))
+    elseif G_defaults:readSetting("NETWORK_PROXY") then
+        NetworkMgr:setHTTPProxy(G_defaults:readSetting("NETWORK_PROXY"))
+    end
 end
 
 return NetworkMgr:init()

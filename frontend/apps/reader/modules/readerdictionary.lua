@@ -16,7 +16,7 @@ local JSON = require("json")
 local KeyValuePage = require("ui/widget/keyvaluepage")
 local LuaData = require("luadata")
 local MultiConfirmBox = require("ui/widget/multiconfirmbox")
-local NetworkMgr = require("ui/network/manager")
+local NetworkMgr = not Device:isHardenedOffline() and require("ui/network/manager")
 local Presets = require("ui/presets")
 local SortWidget = require("ui/widget/sortwidget")
 local Trapper = require("ui/trapper")
@@ -96,6 +96,7 @@ end
 --        return html
 --    end
 local function getDictionaryFixHtmlFunc(path)
+    if Device:isHardenedOffline() then return end
     if lfs.attributes(path, "mode") == "file" then
         local ok, func = pcall(dofile, path)
         if ok and func then
@@ -115,8 +116,11 @@ function ReaderDictionary:init()
 
     self.default_layout = {
         { "prev_dict", "highlight", "next_dict" },
-        { "wikipedia",    "search",     "close" },
+        { "search", "close" },
     }
+    if not Device:isHardenedOffline() then
+        self.default_layout[2] = { "wikipedia", "search", "close" }
+    end
     if Device:hasDPad() and Device:hasFewKeys() then
         table.insert(self.default_layout, 1, {"text_selection"})
     end
@@ -124,9 +128,11 @@ function ReaderDictionary:init()
     if self.ui then
         self.ui.menu:registerToMainMenu(self)
     end
-    self.data_dir = G_defaults:readSetting("STARDICT_DATA_DIR") or
-        os.getenv("STARDICT_DATA_DIR") or
-        DataStorage:getDataDir() .. "/data/dict"
+    local private_data_dir = DataStorage:getDataDir() .. "/data/dict"
+    self.data_dir = Device:isHardenedOffline() and private_data_dir
+        or G_defaults:readSetting("STARDICT_DATA_DIR")
+        or os.getenv("STARDICT_DATA_DIR")
+        or private_data_dir
 
     -- Show the "Searching..." InfoMessage after this delay
     self.lookup_msg_delay = 0.5
@@ -320,11 +326,6 @@ function ReaderDictionary:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Download dictionaries"),
-                sub_item_table_func = function() return self:_genDownloadDictionariesMenu() end,
-                separator = true,
-            },
-            {
                 text_func = function()
                     local text = _("Enable fuzzy search")
                     if G_reader_settings:nilOrFalse("disable_fuzzy_search") then
@@ -431,6 +432,13 @@ function ReaderDictionary:addToMainMenu(menu_items)
             }
         }
     }
+    if not Device:isHardenedOffline() then
+        table.insert(menu_items.dictionary_settings.sub_item_table, 3, {
+            text = _("Download dictionaries"),
+            sub_item_table_func = function() return self:_genDownloadDictionariesMenu() end,
+            separator = true,
+        })
+    end
     table.insert(menu_items.dictionary_settings.sub_item_table, {
         text = _("Customize buttons"),
         sub_item_table_func = function()
@@ -509,11 +517,13 @@ function ReaderDictionary:_genCustomizeButtonsMenu()
         { text = _("Previous result"), id = "prev_dict" },
         { text = _("Highlight"),       id = "highlight" },
         { text = _("Next result"),     id = "next_dict" },
-        { text = _("Wikipedia"),       id = "wikipedia" },
         { text = _("Search"),          id = "search" },
         { text = _("Close"),           id = "close" },
-        { text = _("Translate"),       id = "translate" },
     }
+    if not Device:isHardenedOffline() then
+        table.insert(available_options, 4, { text = _("Wikipedia"), id = "wikipedia" })
+        table.insert(available_options, { text = _("Translate"), id = "translate" })
+    end
     if Device:hasDPad() then
         table.insert(available_options, { text = _("Text selection"), id = "text_selection" })
     end
@@ -1690,6 +1700,7 @@ function ReaderDictionary:filterDownloadDict()
 end
 
 function ReaderDictionary:onTapDownloadDict(item)
+    if not NetworkMgr then return false end
     local dict = item.dict
     local t = {
         dict.name,
@@ -1772,6 +1783,7 @@ local function extractDictionary(archive, extract_to)
 end
 
 function ReaderDictionary:downloadDictionary(dict)
+    if not NetworkMgr then return false end
     -- Ensure we're running in a coroutine.
     local co = coroutine.running()
     if not co then
