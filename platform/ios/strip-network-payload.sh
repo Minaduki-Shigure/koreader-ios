@@ -39,10 +39,14 @@ rm -f \
     "${APP_DIR}/ffi/netinfo.lua" \
     "${APP_DIR}/ffi/crypto.lua"
 
-# The strict build has no subprocess-backed dictionary engine. Keep both the
-# executable and its GLib runtime out of the final payload as a second boundary
-# in case a stale action or future module accidentally becomes reachable.
-rm -f "${APP_DIR}/sdcv"
+# The native iOS launcher links libluajit and loads reader.lua in-process. The
+# staged command-line launchers cannot be used on iOS and only add unsigned
+# executable code to the bundle. The strict build also has no subprocess-backed
+# dictionary engine, so keep its executable out as a second boundary.
+rm -f \
+    "${APP_DIR}/koreader" \
+    "${APP_DIR}/luajit" \
+    "${APP_DIR}/sdcv"
 
 # Base normally stages native Lua modules and shared libraries at a few
 # different levels. Match only network/crypto module names, never document

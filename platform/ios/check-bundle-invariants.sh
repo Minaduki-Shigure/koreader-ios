@@ -73,7 +73,7 @@ for forbidden in \
     common/ssl common/ssl.lua \
     common/turbo common/turbo.lua \
     common/zmq common/zmq.lua common/lzmq.lua \
-    sdcv; do
+    koreader luajit sdcv; do
     if [ -e "${APP_DIR}/${forbidden}" ]; then
         echo "error: forbidden strict-offline module bundled: ${forbidden}" >&2
         exit 1
