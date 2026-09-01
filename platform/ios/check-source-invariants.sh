@@ -48,6 +48,7 @@ require_source "${LOADER}" 'NSURLIsExcludedFromBackupKey'
 require_source "${LOADER}" 'setenv("KO_HOME"'
 require_source "${LOADER}" 'setenv("KO_BOOKS_HOME"'
 require_source "${LOADER}" 'setenv("KO_HARDENED_OFFLINE", "1", 1)'
+require_source "${LOADER}" 'if (setenv("KO_IOS", "1", 1) != 0'
 reject_source "${LOADER}" 'NSDocumentDirectory'
 
 # The picker is a single-file copy-in ingress. It never persists an external

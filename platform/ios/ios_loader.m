@@ -146,10 +146,6 @@ int main(int argc, char *argv[]) {
          * events; we don't need fake mouse ones. */
         setenv("SDL_TOUCH_MOUSE_EVENTS", "0", 1);
 
-        /* Tell Lua plugins (e.g. iosfilepicker.koplugin) we're on iOS.
-         * KOReader still self-identifies as the SDL emulator otherwise. */
-        setenv("KO_IOS", "1", 1);
-
         /* Keep executable settings and imported documents in private,
          * protected Application Support directories. Imported documents
          * enter Books only through the copy-in bridge; KOReader never
@@ -162,10 +158,13 @@ int main(int argc, char *argv[]) {
                     storageError.localizedDescription.UTF8String ?: "unknown error");
             return EXIT_FAILURE;
         }
-        if (setenv("KO_HOME", dataPath.fileSystemRepresentation, 1) != 0
+        /* Device selection and every hardened frontend guard depend on these
+         * variables. Fail before Lua starts if any policy input cannot be set. */
+        if (setenv("KO_IOS", "1", 1) != 0
+                || setenv("KO_HOME", dataPath.fileSystemRepresentation, 1) != 0
                 || setenv("KO_BOOKS_HOME", booksPath.fileSystemRepresentation, 1) != 0
                 || setenv("KO_HARDENED_OFFLINE", "1", 1) != 0) {
-            fprintf(stderr, "[%s]: failed to configure private storage environment\n",
+            fprintf(stderr, "[%s]: failed to configure hardened iOS environment\n",
                     LOGNAME);
             return EXIT_FAILURE;
         }
