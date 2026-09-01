@@ -71,7 +71,7 @@ normalize_absolute_path() {
         }
         result = ""
         for (i = 1; i <= depth; i++) result = result "/" stack[i]
-        print result == "" ? "/" : result
+        print (result == "" ? "/" : result)
     }'
 }
 
