@@ -8,6 +8,15 @@ local logger = require("logger")
 local util = require("util")
 
 local LuaSettings = {}
+local hardened_offline = os.getenv("KO_HARDENED_OFFLINE") == "1"
+local SafeSettings = hardened_offline and require("safesettings")
+
+local function loadSettingsFile(path)
+    if hardened_offline then
+        return SafeSettings.loadTable(path)
+    end
+    return pcall(dofile, path)
+end
 
 function LuaSettings:extend(o)
     o = o or {}
@@ -28,13 +37,13 @@ function LuaSettings:open(file_path)
     -- so logger.warn() only if there was an existing file
     local existing = lfs.attributes(new.file, "mode") == "file"
 
-    ok, stored = pcall(dofile, new.file)
+    ok, stored = loadSettingsFile(new.file)
     if ok and stored then
         new.data = stored
     else
         if existing then logger.warn("LuaSettings: Failed reading", new.file, "(probably corrupted).") end
         -- Fallback to .old if it exists
-        ok, stored = pcall(dofile, new.file..".old")
+        ok, stored = loadSettingsFile(new.file..".old")
         if ok and stored then
             if existing then logger.warn("LuaSettings: read from backup file", new.file..".old") end
             new.data = stored

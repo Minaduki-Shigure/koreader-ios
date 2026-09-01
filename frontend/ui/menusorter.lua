@@ -8,6 +8,8 @@ local FFIUtil = require("ffi/util")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local _ = require("gettext")
+local hardened_offline = os.getenv("KO_HARDENED_OFFLINE") == "1"
+local SafeSettings = hardened_offline and require("safesettings")
 
 local separator_id = "----------------------------"
 
@@ -25,6 +27,12 @@ function MenuSorter:readMSSettings(config_prefix)
             "%s/%s_menu_order.lua", DataStorage:getSettingsDir(), config_prefix)
 
         if lfs.attributes(menu_order) then
+            if hardened_offline then
+                local ok, data = SafeSettings.loadTable(menu_order)
+                if ok then return data end
+                logger.warn("MenuSorter: rejected unsafe menu order", menu_order, data)
+                return {}
+            end
             return dofile(menu_order) or {}
         end
     end

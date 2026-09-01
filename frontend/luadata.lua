@@ -7,6 +7,8 @@ local dump = require("dump")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local util = require("util")
+local hardened_offline = os.getenv("KO_HARDENED_OFFLINE") == "1"
+local SafeSettings = hardened_offline and require("safesettings")
 
 local LuaData = LuaSettings:extend{
     name = "",
@@ -38,41 +40,54 @@ function LuaData:open(file_path, name)
     local data_env = {}
     data_env.__index = data_env
     setmetatable(data_env, data_env)
-    data_env[new.name.."Entry"] = function(table)
-        if table.index then
+    data_env[new.name.."Entry"] = function(entry)
+        if hardened_offline then
+            local valid, validation_err = SafeSettings.validatePlainData(entry)
+            if not valid then error(validation_err, 0) end
+        end
+        if entry.index then
             -- We've got a deleted setting, overwrite with nil and be done with it.
-            if not table.data then
-                new.data[table.index] = nil
+            if not entry.data then
+                new.data[entry.index] = nil
                 return
             end
 
-            if type(table.data) == "table" then
-                new.data[table.index] = new.data[table.index] or {}
-                local size = util.tableSize(table.data)
+            if type(entry.data) == "table" then
+                new.data[entry.index] = new.data[entry.index] or {}
+                local size = util.tableSize(entry.data)
                 if size == 1 then
                     -- It's an incremental array element, insert it in the array at its proper index
-                    for key, value in pairs(table.data) do
-                        new.data[table.index][key] = value
+                    for key, value in pairs(entry.data) do
+                        new.data[entry.index][key] = value
                     end
                 else
                     -- It's a complex table, just replace the whole thing
-                    new.data[table.index] = table.data
+                    new.data[entry.index] = entry.data
                 end
             else
-                new.data[table.index] = table.data
+                new.data[entry.index] = entry.data
             end
         else
             -- It's an untagged blob, use it as-is
-            new.data = table
+            new.data = entry
         end
+    end
+
+    local function loadDataFile(path)
+        if hardened_offline then
+            return SafeSettings.runFile(path, data_env)
+        end
+        local chunk, err = loadfile(path, "t", data_env)
+        if not chunk then return false, err end
+        chunk()
+        return true
     end
 
     local ok, err
     if lfs.attributes(new.file, "mode") == "file" then
-        ok, err = loadfile(new.file, "t", data_env)
+        ok, err = loadDataFile(new.file)
         if ok then
             logger.dbg("LuaData: data is read from", new.file)
-            ok()
         else
             logger.dbg("LuaData:", new.file, "is invalid, removed.", err)
             os.remove(new.file)
@@ -82,10 +97,9 @@ function LuaData:open(file_path, name)
         for i=1, new.max_backups, 1 do
             local backup_file = new.file..".old."..i
             if lfs.attributes(backup_file, "mode") == "file" then
-                ok, err = loadfile(backup_file, "t", data_env)
+                ok, err = loadDataFile(backup_file)
                 if ok then
                     logger.dbg("LuaData: data is read from", backup_file)
-                    ok()
                     break
                 else
                     logger.dbg("LuaData:", backup_file, "is invalid, removed.", err)
