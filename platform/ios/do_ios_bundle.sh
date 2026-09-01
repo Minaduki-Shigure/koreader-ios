@@ -74,10 +74,14 @@ xcrun --sdk "${IOS_PLATFORM}" clang \
     -Wl,-exported_symbol,_ko_ios_import_document_start \
     -Wl,-exported_symbol,_ko_ios_import_document_poll \
     -Wl,-exported_symbol,_ko_ios_get_safe_area_pixels \
+    -Wl,-exported_symbol,_ko_ios_system_appearance_current \
+    -Wl,-exported_symbol,_ko_ios_system_appearance_event_type \
+    -Wl,-exported_symbol,_ko_ios_system_appearance_start \
     -Wl,-rpath,@executable_path/app/libs \
     -o "${APP_BUNDLE}/KOReader" \
     "${PLATFORM_DIR}/ios_loader.m" \
-    "${PLATFORM_DIR}/ios_filepicker.m"
+    "${PLATFORM_DIR}/ios_filepicker.m" \
+    "${PLATFORM_DIR}/ios_system_appearance.m"
 
 # 2) Copy assets.
 echo "[*] Copying koreader/ asset tree"

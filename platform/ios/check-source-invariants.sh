@@ -6,12 +6,16 @@ PLATFORM_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${PLATFORM_DIR}/../.." && pwd)"
 LOADER="${PLATFORM_DIR}/ios_loader.m"
 PICKER="${PLATFORM_DIR}/ios_filepicker.m"
+APPEARANCE="${PLATFORM_DIR}/ios_system_appearance.m"
 PLIST="${PLATFORM_DIR}/Info.plist.in"
 PROJECT="${PLATFORM_DIR}/project.yml"
+BUNDLER="${PLATFORM_DIR}/do_ios_bundle.sh"
 RELEASE_METADATA="${PLATFORM_DIR}/release.json"
 COVER_BROWSER="${REPO_ROOT}/plugins/coverbrowser.koplugin/bookinfomanager.lua"
 IMPORT_PLUGIN="${REPO_ROOT}/plugins/iosimporter.koplugin/main.lua"
+APPEARANCE_PLUGIN="${REPO_ROOT}/plugins/iossystemappearance.koplugin/main.lua"
 PLUGIN_LOADER="${REPO_ROOT}/frontend/pluginloader.lua"
+SDL3="${REPO_ROOT}/base/ffi/SDL3.lua"
 DEVICE="${REPO_ROOT}/frontend/device/sdl/device.lua"
 READER_UI="${REPO_ROOT}/frontend/apps/reader/readerui.lua"
 FILE_MANAGER="${REPO_ROOT}/frontend/apps/filemanager/filemanager.lua"
@@ -102,12 +106,21 @@ require_source "${LOADER}" 'setenv("KO_HARDENED_OFFLINE", "1", 1)'
 require_source "${LOADER}" 'if (setenv("KO_IOS", "1", 1) != 0'
 reject_source "${LOADER}" 'NSDocumentDirectory'
 
-# The picker is a single-file copy-in ingress. It never persists an external
-# capability and does all provider I/O off the UIKit thread.
-require_source "${PICKER}" 'initForOpeningContentTypes:@[UTTypeData]'
-require_source "${PICKER}" 'asCopy:YES'
+# The picker supports bounded file batches and whole folders, but only as
+# private copies. It never persists an external capability and does all
+# provider I/O off the UIKit thread.
+require_source "${PICKER}" 'KO_IMPORT_SELECT_FILES'
+require_source "${PICKER}" 'KO_IMPORT_SELECT_FOLDERS'
+require_source "${PICKER}" '? @[UTTypeFolder]'
+require_source "${PICKER}" ': @[UTTypeData]'
+require_source "${PICKER}" 'initForOpeningContentTypes:contentTypes'
+require_source "${PICKER}" 'BOOL copySelection = selectionMode == KO_IMPORT_SELECT_FILES;'
+require_source "${PICKER}" 'asCopy:copySelection'
+require_source "${PICKER}" 'picker.allowsMultipleSelection = YES;'
 require_source "${PICKER}" 'picker.modalPresentationStyle = UIModalPresentationFullScreen;'
 require_source "${PICKER}" 'NSFileCoordinator'
+require_source "${PICKER}" 'NSFileCoordinatorReadingWithoutChanges'
+require_source "${PICKER}" 'NSDirectoryEnumerator<NSURL *>'
 require_source "${PICKER}" 'startAccessingSecurityScopedResource'
 require_source "${PICKER}" 'stopAccessingSecurityScopedResource'
 require_source "${PICKER}" 'NSLock'
@@ -117,10 +130,25 @@ require_source "${PICKER}" 'NSURLIsRegularFileKey'
 require_source "${PICKER}" 'NSURLIsDirectoryKey'
 require_source "${PICKER}" 'NSURLIsSymbolicLinkKey'
 require_source "${PICKER}" 'lstat('
+require_source "${PICKER}" 'KO_IMPORT_MAX_SELECTED_ITEMS 64U'
+require_source "${PICKER}" 'KO_IMPORT_MAX_DOCUMENTS 512U'
+require_source "${PICKER}" 'KO_IMPORT_MAX_SCANNED_ITEMS 8192U'
+require_source "${PICKER}" 'KO_IMPORT_MAX_DIRECTORY_DEPTH 32U'
+require_source "${PICKER}" 'KO_IMPORT_MAX_AGGREGATE_BYTES'
+require_source "${PICKER}" 'getenv("KO_HOME")'
+require_source "${PICKER}" '@"ImportStaging"'
+require_source "${PICKER}" 'initWithUUIDString:uuidString'
+require_source "${PICKER}" 'NSURLIsExcludedFromBackupKey'
+require_source "${PICKER}" 'requireSecurityScope'
+require_source "${PICKER}" 'hasItemSecurityScope'
+require_source "${PICKER}" 'if (pickerCopiedSelection) {'
+require_source "${PICKER}" 'moveItemAtURL:stageURL'
 require_source "${PICKER}" 'moveItemAtURL:temporaryURL'
 require_source "${PICKER}" 'ko_ios_import_document_start'
 require_source "${PICKER}" 'ko_ios_import_document_poll'
-reject_source "${PICKER}" 'UTTypeFolder'
+require_source "${PICKER}" 'outImportedCount'
+require_source "${PICKER}" 'outSkippedCount'
+require_source "${PICKER}" 'outIsCollection'
 reject_source "${PICKER}" 'asCopy:NO'
 reject_source "${PICKER}" 'bookmarkData'
 reject_source "${PICKER}" 'URLByResolvingBookmarkData'
@@ -131,10 +159,44 @@ reject_source "${PICKER}" '@"py"'
 # Lua independently verifies the returned path is still below private Books.
 require_source "${IMPORT_PLUGIN}" 'ko_ios_import_document_start'
 require_source "${IMPORT_PLUGIN}" 'ko_ios_import_document_poll'
+require_source "${IMPORT_PLUGIN}" 'KO_IMPORT_SELECT_FILES'
+require_source "${IMPORT_PLUGIN}" 'KO_IMPORT_SELECT_FOLDERS'
+require_source "${IMPORT_PLUGIN}" 'out_imported_count'
+require_source "${IMPORT_PLUGIN}" 'out_skipped_count'
+require_source "${IMPORT_PLUGIN}" 'out_is_collection'
+require_source "${IMPORT_PLUGIN}" 'libs/libkoreader-lfs'
+require_source "${IMPORT_PLUGIN}" 'getCurrentUI'
 require_source "${IMPORT_PLUGIN}" 'KO_HARDENED_OFFLINE'
 require_source "${IMPORT_PLUGIN}" 'path outside Books'
-reject_source "${IMPORT_PLUGIN}" 'pick_folder'
 reject_source "${IMPORT_PLUGIN}" 'resolve_bookmark'
+
+security_scope_start_count="$(grep -Fc -- 'startAccessingSecurityScopedResource' "${PICKER}" || true)"
+if [ "${security_scope_start_count}" -lt 2 ]; then
+    echo "error: folder import does not scope both the selected root and child documents" >&2
+    exit 1
+fi
+
+# System appearance changes are observed by UIKit on its main thread, bridged
+# through a dynamically allocated SDL event, and applied idempotently in Lua.
+# There is no periodic poller and no call into Lua from a UIKit callback.
+require_source "${APPEARANCE}" 'NSThread.isMainThread'
+require_source "${APPEARANCE}" 'dispatch_sync(dispatch_get_main_queue()'
+require_source "${APPEARANCE}" 'registerForTraitChanges:'
+require_source "${APPEARANCE}" 'UITraitUserInterfaceStyle.class'
+require_source "${APPEARANCE}" 'SDL_RegisterEvents(1)'
+require_source "${APPEARANCE}" 'SDL_PushEvent(&event)'
+require_source "${APPEARANCE}" 'atomic_exchange_explicit'
+require_source "${APPEARANCE}" 'KO_IOS_EXPORT bool ko_ios_system_appearance_start'
+require_source "${APPEARANCE}" 'KO_IOS_EXPORT uint32_t ko_ios_system_appearance_event_type'
+require_source "${APPEARANCE}" 'KO_IOS_EXPORT int32_t ko_ios_system_appearance_current'
+reject_source "${APPEARANCE}" 'NSTimer'
+require_source "${SDL3}" 'event.type >= SDL.SDL_EVENT_USER'
+require_source "${SDL3}" 'event.type < SDL.SDL_EVENT_LAST'
+require_source "${SDL3}" 'code = tonumber(event.user.code)'
+require_source "${APPEARANCE_PLUGIN}" 'KO_HARDENED_OFFLINE'
+require_source "${APPEARANCE_PLUGIN}" 'ko_ios_system_appearance_start'
+require_source "${APPEARANCE_PLUGIN}" 'controller:syncCurrentAppearance()'
+reject_source "${APPEARANCE_PLUGIN}" 'scheduleIn('
 
 # No Files sharing, open-in-place provider paths, or document type argv entry.
 if ! grep -A1 -F '<key>UIFileSharingEnabled</key>' "${PLIST}" | grep -Fq '<false/>'; then
@@ -178,6 +240,14 @@ require_source "${PROJECT}" '_ko_ios_import_document_start'
 require_source "${PROJECT}" 'ENABLE_DEBUG_DYLIB: NO'
 require_source "${PROJECT}" '_ko_ios_import_document_poll'
 require_source "${PROJECT}" '_ko_ios_get_safe_area_pixels'
+require_source "${PROJECT}" 'platform/ios/ios_system_appearance.m'
+require_source "${PROJECT}" '_ko_ios_system_appearance_current'
+require_source "${PROJECT}" '_ko_ios_system_appearance_event_type'
+require_source "${PROJECT}" '_ko_ios_system_appearance_start'
+require_source "${BUNDLER}" '"${PLATFORM_DIR}/ios_system_appearance.m"'
+require_source "${BUNDLER}" '_ko_ios_system_appearance_current'
+require_source "${BUNDLER}" '_ko_ios_system_appearance_event_type'
+require_source "${BUNDLER}" '_ko_ios_system_appearance_start'
 
 # CoverBrowser normally changes crengine's process-wide cache from a forked
 # worker. iOS runs this work inline, so it must never make that switch.

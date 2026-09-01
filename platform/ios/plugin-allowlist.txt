@@ -6,6 +6,7 @@ coverbrowser.koplugin
 gestures.koplugin
 hotkeys.koplugin
 iosimporter.koplugin
+iossystemappearance.koplugin
 perceptionexpander.koplugin
 profiles.koplugin
 qrclipboard.koplugin

@@ -63,6 +63,28 @@ KOReader from LiveContainer's Sources page.
 The source format is shared by classic SideStore and LiveContainer. It does not
 declare `marketplaceID`, `Build`, or other AltStore PAL notarization fields.
 
+### Using the iOS port
+
+In KOReader's main menu, choose **Import files...** to select one or more
+documents, or **Import folder...** to select one or more complete folders.
+Imports are copied into the private Books library. A single file can be opened
+immediately; a batch or folder opens as a browsable collection. Folder imports
+preserve their supported-document hierarchy while hidden files, symbolic
+links, packages, sidecars, scripts, unsupported formats, and generic archives
+are skipped.
+
+An import accepts at most 64 top-level selections, 512 supported documents,
+8192 scanned entries, 2 GiB per file, 4 GiB in total, and 32 directory levels.
+Provider or filesystem errors and limit violations roll the entire batch back;
+unsupported or unsafe entries are reported as skipped. The app never retains
+security-scoped access to the original files or folders.
+
+The allowlisted **Follow system appearance** plugin is enabled by default. It
+switches KOReader's night mode when iOS changes between light and dark
+appearance, including scheduled system changes while the app is open. Disable
+that plugin in **Plugin management** and restart if manual night-mode control
+is preferred.
+
 ### Homebrew packages
 
 Install everything in one command:
@@ -208,9 +230,9 @@ upstream KOReader tag.
 - App state lives in `Application Support/KOReader/Data`; imported books live
   in `Application Support/KOReader/Books`. Both are private app-container
   locations with iOS data protection enabled.
-- Documents enter through the system picker as copies. File Sharing,
-  open-in-place, document-type launch arguments, persistent provider bookmarks,
-  and external folder access are disabled.
+- Documents enter through the system picker as bounded file or folder copies.
+  File Sharing, open-in-place, document-type launch arguments, persistent
+  provider bookmarks, and ongoing external folder access are disabled.
 - File browsing and document launch are confined to the private Books tree,
   including canonical-path and symlink checks. Legacy history, collections,
   shortcuts, and startup state cannot reopen paths outside that tree.
@@ -236,8 +258,9 @@ upstream KOReader tag.
 
 ## What's actually built
 
-- **One main exec** (`KOReader`) — compiled from `platform/ios/ios_loader.m`
-  + `ios_filepicker.m`, links `libluajit` and `libSDL3`.
+- **One main exec** (`KOReader`) — compiled from `platform/ios/ios_loader.m`,
+  `ios_filepicker.m`, and `ios_system_appearance.m`; links `libluajit` and
+  `libSDL3`.
 - **One monolithic dylib** (`libkoreader-monolibtic.dylib`) — every
   thirdparty C/C++ library KOReader uses, statically linked into a
   single ~17 MiB shared library so iOS does one dyld load + signature
@@ -268,9 +291,10 @@ upstream KOReader tag.
   as a separate process. The strict build removes that executable and its GLib
   dependency, dictionary data, and the reader dictionary module instead of
   exposing an action that cannot run reliably on iOS.
-- **No direct external document access.** The system document picker copies one
-  supported document at a time into private Books storage. The port does not
-  retain security-scoped access to files or folders owned by other providers.
+- **No direct external document access.** The system document picker can copy
+  bounded selections of supported files or complete folders into private Books
+  storage. The port does not retain security-scoped access to files or folders
+  owned by other providers.
 - **Simulator builds are untested.** The `IOS_PLATFORM=iphonesimulator`
   parameter exists in `make/ios.mk` but `base/` would need to be
   rebuilt against the simulator SDK — we haven't wired up an XCFramework.

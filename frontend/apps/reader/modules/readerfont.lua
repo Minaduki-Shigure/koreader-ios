@@ -26,6 +26,9 @@ local ReaderFont = InputContainer:extend{
     steps = {0,1,1,1,1,1,2,2,2,3,3,3,4,4,5},
 }
 
+local IOS_GESTURE_FONT_DELAY_S = 0.05
+local IOS_GESTURE_FONT_MAX_RETRIES = 40
+
 -- Keep a list of the new fonts seen at launch
 local newly_added_fonts = nil -- not yet filled
 
@@ -33,6 +36,10 @@ function ReaderFont:init()
     self.ui.menu:registerToMainMenu(self)
     -- NOP our own gesture handling
     self.ges_events = nil
+
+    self._apply_gesture_font_size_action = function()
+        self:_applyPendingGestureFontSize()
+    end
 end
 
 function ReaderFont:setupFaceMenuTable()
@@ -196,12 +203,14 @@ end
     UpdatePos event is used to tell ReaderRolling to update pos.
 --]]
 function ReaderFont:onChangeSize(delta)
+    if delta == 0 then return true end
     self:onSetFontSize(self.configurable.font_size + delta)
     return true
 end
 
 function ReaderFont:onSetFontSize(size)
     size = math.max(12, math.min(size, 255))
+    if size == self.configurable.font_size then return true end
     self.configurable.font_size = size
     self.ui.document:setFontSize(Screen:scaleBySize(size))
     self.ui:handleEvent(Event:new("UpdatePos"))
@@ -356,36 +365,109 @@ function ReaderFont:gesToFontSize(ges)
     -- Dispatcher feeds us a number, not a gesture
     if type(ges) ~= "table" then return ges end
 
-    if ges.distance == nil then
-        ges.distance = 1
+    local distance = ges.distance == nil and 1 or ges.distance
+    if type(distance) ~= "number" or distance ~= distance
+            or distance <= 0 or distance == math.huge then
+        return 0
     end
     -- Compute the scaling based on the gesture's direction (for pinch/spread)
-    local step
+    local extent
     if ges.direction and ges.direction == "vertical" then
-        step = math.ceil(2 * #self.steps * ges.distance / Screen:getHeight())
+        extent = Screen:getHeight()
     elseif ges.direction and ges.direction == "horizontal" then
-        step = math.ceil(2 * #self.steps * ges.distance / Screen:getWidth())
+        extent = Screen:getWidth()
     elseif ges.direction and ges.direction == "diagonal" then
-        local screen_diagonal = math.sqrt(Screen:getWidth()^2 + Screen:getHeight()^2)
-        step = math.ceil(2 * #self.steps * ges.distance / screen_diagonal)
+        extent = math.sqrt(Screen:getWidth()^2 + Screen:getHeight()^2)
     else
-        step = math.ceil(2 * #self.steps * ges.distance / math.min(Screen:getWidth(), Screen:getHeight()))
+        extent = math.min(Screen:getWidth(), Screen:getHeight())
     end
-    local delta_int = self.steps[step] or self.steps[#self.steps]
-    return delta_int
+    if type(extent) ~= "number" or extent ~= extent
+            or extent <= 0 or extent == math.huge then
+        return 0
+    end
+
+    local step = math.ceil(2 * #self.steps * distance / extent)
+    if step ~= step or step == math.huge or step == -math.huge then return 0 end
+    step = math.max(1, math.min(step, #self.steps))
+    return self.steps[step] or 0
+end
+
+function ReaderFont:_applyPendingGestureFontSize()
+    local delta = self._pending_gesture_font_delta
+    if not delta or delta == 0 or not self.ui or not self.ui.document then
+        self._pending_gesture_font_delta = nil
+        self._gesture_font_retry_count = nil
+        return
+    end
+
+    local gesture_detector = Device.input and Device.input.gesture_detector
+    local active_contacts = gesture_detector
+        and tonumber(gesture_detector.contact_count) or 0
+    if Device:isIOS() and active_contacts > 0 then
+        local retry_count = (self._gesture_font_retry_count or 0) + 1
+        if retry_count >= IOS_GESTURE_FONT_MAX_RETRIES then
+            -- A missing/cancelled touch-up must never turn into an endless
+            -- timer or force CRengine to reflow with a live contact.
+            self._pending_gesture_font_delta = nil
+            self._gesture_font_retry_count = nil
+            return
+        end
+        self._gesture_font_retry_count = retry_count
+        UIManager:scheduleIn(IOS_GESTURE_FONT_DELAY_S,
+                             self._apply_gesture_font_size_action)
+        return
+    end
+
+    self._pending_gesture_font_delta = nil
+    self._gesture_font_retry_count = nil
+    self:onChangeSize(delta)
+end
+
+function ReaderFont:_deferGestureFontSize(delta)
+    if delta == 0 then return end
+
+    -- SDL reports each iOS finger-up in its own input frame. Let the second
+    -- frame drain before CRengine performs a synchronous document reflow.
+    self._pending_gesture_font_delta = (self._pending_gesture_font_delta or 0) + delta
+    self._gesture_font_retry_count = 0
+    if not self._apply_gesture_font_size_action then
+        self._apply_gesture_font_size_action = function()
+            self:_applyPendingGestureFontSize()
+        end
+    end
+    UIManager:unschedule(self._apply_gesture_font_size_action)
+    UIManager:scheduleIn(IOS_GESTURE_FONT_DELAY_S, self._apply_gesture_font_size_action)
+end
+
+function ReaderFont:onCloseDocument()
+    if self._apply_gesture_font_size_action then
+        UIManager:unschedule(self._apply_gesture_font_size_action)
+    end
+    self._pending_gesture_font_delta = nil
+    self._gesture_font_retry_count = nil
 end
 
 function ReaderFont:onIncreaseFontSize(ges)
     local delta_int = self:gesToFontSize(ges)
+    if delta_int == 0 then return true end
     Notification:notify(_("Increasing font size…"), nil, true)
-    self:onChangeSize(delta_int)
+    if Device:isIOS() and type(ges) == "table" then
+        self:_deferGestureFontSize(delta_int)
+    else
+        self:onChangeSize(delta_int)
+    end
     return true
 end
 
 function ReaderFont:onDecreaseFontSize(ges)
     local delta_int = self:gesToFontSize(ges)
+    if delta_int == 0 then return true end
     Notification:notify(_("Decreasing font size…"), nil, true)
-    self:onChangeSize(-delta_int)
+    if Device:isIOS() and type(ges) == "table" then
+        self:_deferGestureFontSize(-delta_int)
+    else
+        self:onChangeSize(-delta_int)
+    end
     return true
 end
 

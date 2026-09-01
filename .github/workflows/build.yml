@@ -230,6 +230,7 @@ jobs:
           for spec in \
             spec/front/unit/docsettings_hardened_ios_spec.lua \
             spec/front/unit/filemanagerutil_ios_spec.lua \
+            spec/front/unit/iosimporter_spec.lua \
             spec/front/unit/writable_lua_hardened_ios_spec.lua; do
             ./base/utils/fake_tty.py make --assume-old=base testfront \
               RUNTESTS="${hardened_runner}" T="${spec}" \

@@ -35,6 +35,8 @@ targets:
         type: file
       - path: platform/ios/ios_filepicker.m
         type: file
+      - path: platform/ios/ios_system_appearance.m
+        type: file
       - path: platform/ios/Assets.xcassets
     settings:
       base:
@@ -58,6 +60,9 @@ targets:
           - -Wl,-exported_symbol,_ko_ios_import_document_start
           - -Wl,-exported_symbol,_ko_ios_import_document_poll
           - -Wl,-exported_symbol,_ko_ios_get_safe_area_pixels
+          - -Wl,-exported_symbol,_ko_ios_system_appearance_current
+          - -Wl,-exported_symbol,_ko_ios_system_appearance_event_type
+          - -Wl,-exported_symbol,_ko_ios_system_appearance_start
         # rpath so dyld finds the dylibs we copy into app/libs at post-build.
         LD_RUNPATH_SEARCH_PATHS:
           - $(inherited)

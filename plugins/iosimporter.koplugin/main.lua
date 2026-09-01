@@ -1,8 +1,9 @@
 --[[--
-Strict copy-in document import for iOS.
+Strict copy-in document and folder import for iOS.
 
 The native bridge never exposes a provider path to Lua. A successful poll
-returns only the final path below KO_BOOKS_HOME.
+returns only the final file or collection path below KO_BOOKS_HOME, plus
+bounded import and skip counts.
 
 @module koplugin.iOSImporter
 --]]--
@@ -18,6 +19,7 @@ local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local ffi = require("ffi")
 local ffiUtil = require("ffi/util")
+local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local _ = require("gettext")
 local T = ffiUtil.template
@@ -32,10 +34,18 @@ if not pcall(ffi.typeof, "ko_import_state_t") then
         KO_IMPORT_DONE_ERROR = 4,
     } ko_import_state_t;
 
-    bool ko_ios_import_document_start(void);
+    typedef enum {
+        KO_IMPORT_SELECT_FILES = 0,
+        KO_IMPORT_SELECT_FOLDERS = 1,
+    } ko_import_selection_mode_t;
+
+    bool ko_ios_import_document_start(ko_import_selection_mode_t selection_mode);
     ko_import_state_t ko_ios_import_document_poll(
         char *out_path, size_t path_capacity,
-        char *out_error, size_t error_capacity);
+        char *out_error, size_t error_capacity,
+        uint32_t *out_imported_count,
+        uint32_t *out_skipped_count,
+        int *out_is_collection);
     ]]
 end
 
@@ -53,17 +63,24 @@ function IOSImporter:init()
 end
 
 function IOSImporter:addToMainMenu(menu_items)
-    menu_items.ios_import_document = {
-        text = _("Import document…"),
+    menu_items.ios_import_files = {
+        text = _("Import files…"),
         sorting_hint = "more_tools",
         callback = function()
-            self:startImport()
+            self:startImport(C.KO_IMPORT_SELECT_FILES)
+        end,
+    }
+    menu_items.ios_import_folder = {
+        text = _("Import folder…"),
+        sorting_hint = "more_tools",
+        callback = function()
+            self:startImport(C.KO_IMPORT_SELECT_FOLDERS)
         end,
     }
 end
 
-function IOSImporter:startImport()
-    if not C.ko_ios_import_document_start() then
+function IOSImporter:startImport(selection_mode)
+    if not C.ko_ios_import_document_start(selection_mode) then
         UIManager:show(InfoMessage:new{
             text = _("A document import is already in progress."),
         })
@@ -72,14 +89,22 @@ function IOSImporter:startImport()
 
     local out_path = ffi.new("char[?]", PATH_CAPACITY)
     local out_error = ffi.new("char[?]", ERROR_CAPACITY)
+    local out_imported_count = ffi.new("uint32_t[1]")
+    local out_skipped_count = ffi.new("uint32_t[1]")
+    local out_is_collection = ffi.new("int[1]")
 
     local function poll()
         local state = C.ko_ios_import_document_poll(
-            out_path, PATH_CAPACITY, out_error, ERROR_CAPACITY)
+            out_path, PATH_CAPACITY, out_error, ERROR_CAPACITY,
+            out_imported_count, out_skipped_count, out_is_collection)
         if state == C.KO_IMPORT_PENDING then
             UIManager:scheduleIn(0.2, poll)
         elseif state == C.KO_IMPORT_DONE_OK then
-            self:onImportSucceeded(ffi.string(out_path))
+            self:onImportSucceeded(
+                ffi.string(out_path),
+                tonumber(out_imported_count[0]),
+                tonumber(out_skipped_count[0]),
+                out_is_collection[0] ~= 0)
         elseif state == C.KO_IMPORT_DONE_CANCEL then
             UIManager:show(InfoMessage:new{ text = _("Import cancelled.") })
         elseif state == C.KO_IMPORT_DONE_ERROR then
@@ -97,7 +122,27 @@ function IOSImporter:startImport()
     UIManager:scheduleIn(0.2, poll)
 end
 
-function IOSImporter:onImportSucceeded(path)
+function IOSImporter:getCurrentUI()
+    local FileManager = require("apps/filemanager/filemanager")
+    if FileManager.instance then return FileManager.instance end
+    return require("apps/reader/readerui").instance
+end
+
+function IOSImporter:showImportedFolder(path)
+    local ui = self:getCurrentUI()
+    if ui and ui.file_chooser then
+        ui.file_chooser:changeToPath(path)
+    elseif ui and ui.showFileManager then
+        -- ReaderUI treats a non-trailing path component as a focused file.
+        ui:onClose()
+        ui:showFileManager(path .. "/")
+    else
+        local FileManager = require("apps/filemanager/filemanager")
+        FileManager:showFiles(path)
+    end
+end
+
+function IOSImporter:onImportSucceeded(path, imported_count, skipped_count, is_collection)
     local books_home = os.getenv("KO_BOOKS_HOME")
     local real_path = ffiUtil.realpath(path)
     local real_home = books_home and ffiUtil.realpath(books_home)
@@ -109,8 +154,44 @@ function IOSImporter:onImportSucceeded(path)
         return
     end
 
-    if self.ui.file_chooser then
-        self.ui.file_chooser:changeToPath(ffiUtil.dirname(real_path), real_path)
+    if not imported_count or imported_count < 1 then
+        logger.err("iosimporter: native bridge returned an invalid import count")
+        UIManager:show(InfoMessage:new{ text = _("Import failed.") })
+        return
+    end
+
+    local imported_mode = lfs.attributes(real_path, "mode")
+    if (is_collection and imported_mode ~= "directory")
+            or (not is_collection and imported_mode ~= "file") then
+        logger.err("iosimporter: native bridge returned an invalid result type")
+        UIManager:show(InfoMessage:new{ text = _("Import failed.") })
+        return
+    end
+
+    if is_collection then
+        local destination = real_path:match("([^/]+)$") or real_path
+        local message = T(
+            _("Imported documents: %1\nDestination: %2"),
+            imported_count,
+            destination)
+        if skipped_count and skipped_count > 0 then
+            message = message .. "\n" .. T(
+                _("Skipped unsupported or unsafe items: %1"),
+                skipped_count)
+        end
+        UIManager:show(ConfirmBox:new{
+            text = message,
+            ok_text = _("Browse"),
+            ok_callback = function()
+                self:showImportedFolder(real_path)
+            end,
+        })
+        return
+    end
+
+    local current_ui = self:getCurrentUI()
+    if current_ui and current_ui.file_chooser then
+        current_ui.file_chooser:changeToPath(ffiUtil.dirname(real_path), real_path)
     end
 
     UIManager:show(ConfirmBox:new{
@@ -118,7 +199,12 @@ function IOSImporter:onImportSucceeded(path)
         ok_text = _("Open"),
         ok_callback = function()
             local FileManager = require("apps/filemanager/filemanager")
-            FileManager.openFile(self.ui, real_path)
+            local ui = self:getCurrentUI()
+            if ui then
+                FileManager.openFile(ui, real_path)
+            else
+                require("apps/reader/readerui"):showReader(real_path)
+            end
         end,
     })
 end

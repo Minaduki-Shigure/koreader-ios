@@ -38,7 +38,7 @@ jobs:
       IOS_PLATFORM: iphoneos
       PARALLEL_JOBS: "4"
       AUDITED_PARENT_BASE: 9192014d8bd82a91dc1012473be0f238dedfdb54
-      PINNED_BASE_COMMIT: 79750dc7573796bfeab44456c5fc5d86a66c9fda
+      PINNED_BASE_COMMIT: f792885d1b361ff23c5fffc97e7f618202d41c3a
       DERIVED_DATA: build/DerivedData
 
     steps:
@@ -172,13 +172,18 @@ jobs:
             exit 1
           fi
 
-          "${host_make[@]}" testfront RUNTESTS="${targeted_runner}" \
-            T=spec/front/unit/safesettings_spec.lua 2>&1 | \
-            tee artifacts/logs/safesettings.log
+          for spec in \
+            spec/front/unit/safesettings_spec.lua \
+            spec/front/unit/readerfont_spec.lua \
+            spec/front/unit/ios_system_appearance_spec.lua; do
+            "${host_make[@]}" testfront RUNTESTS="${targeted_runner}" T="${spec}" \
+              2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
+          done
 
           for spec in \
             spec/front/unit/docsettings_hardened_ios_spec.lua \
             spec/front/unit/filemanagerutil_ios_spec.lua \
+            spec/front/unit/iosimporter_spec.lua \
             spec/front/unit/writable_lua_hardened_ios_spec.lua; do
             "${host_make[@]}" testfront RUNTESTS="${hardened_runner}" T="${spec}" \
               2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
@@ -241,6 +246,7 @@ jobs:
           test -f "${app}/app/libs/libluajit.dylib"
           test -f "${app}/app/libs/libSDL3.0.dylib"
           test -f "${app}/app/plugins/iosimporter.koplugin/main.lua"
+          test -f "${app}/app/plugins/iossystemappearance.koplugin/main.lua"
 
           ./platform/ios/check-bundle-invariants.sh "${app}/app"
 
@@ -297,6 +303,9 @@ jobs:
             _ko_ios_get_safe_area_pixels \
             _ko_ios_import_document_poll \
             _ko_ios_import_document_start \
+            _ko_ios_system_appearance_current \
+            _ko_ios_system_appearance_event_type \
+            _ko_ios_system_appearance_start \
             >artifacts/expected-main-exports.txt
           xcrun nm -gjU "${app}/KOReader" | LC_ALL=C sort -u \
             >artifacts/main-global-defined-symbols.txt

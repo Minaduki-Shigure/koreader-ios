@@ -8,8 +8,9 @@
 > is device-only (`arm64`) and uses LuaJIT in interpreter-only mode because the
 > iOS sandbox does not permit JIT memory mappings.
 >
-> The iOS package is deliberately offline-only. It imports documents by copying
-> them into private app storage and omits networking, cloud, OTA update,
+> The iOS package is deliberately offline-only. It imports individual files,
+> file batches, or whole folders by copying supported documents into private
+> app storage and omits networking, cloud, OTA update,
 > writable plugin, user-patch, and document-sidecar execution paths. The
 > upstream feature list below describes KOReader generally; online integrations
 > are not present in this iOS package.
