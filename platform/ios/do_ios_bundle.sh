@@ -90,16 +90,24 @@ rsync -aL \
     --exclude 'screenshots' \
     --exclude 'spec' \
     --exclude 'tools' \
+    --exclude 'plugins' \
+    --exclude 'patches' \
+    --exclude 'update_once.marker' \
+    --exclude 'afterupdate.marker' \
     --exclude '*.dSYM' \
-    --exclude 'plugins/SSH.koplugin' \
-    --exclude 'plugins/autofrontlight.koplugin' \
-    --exclude 'plugins/hello.koplugin' \
-    --exclude 'plugins/timesync.koplugin' \
     "${STAGING_KOREADER}/" "${APP_BUNDLE}/app/"
+
+"${PLATFORM_DIR}/copy-allowed-plugins.sh" \
+    "${STAGING_KOREADER}/plugins" "${APP_BUNDLE}/app/plugins"
+rm -rf "${APP_BUNDLE}/app/patches"
+rm -f "${APP_BUNDLE}/app/update_once.marker" "${APP_BUNDLE}/app/afterupdate.marker"
+"${PLATFORM_DIR}/strip-network-payload.sh" "${APP_BUNDLE}/app"
+"${PLATFORM_DIR}/check-bundle-invariants.sh" "${APP_BUNDLE}/app"
 
 # 2.5) Precompile every .lua to LuaJIT bytecode (no-op if there's no
 # host luajit available — only a perf optimisation).
 "${PLATFORM_DIR}/precompile-lua.sh" "${APP_BUNDLE}/app" || true
+"${PLATFORM_DIR}/check-bundle-invariants.sh" "${APP_BUNDLE}/app"
 
 # 3) Generate Info.plist with an Apple-compatible three-component version.
 echo "[*] Writing Info.plist"

@@ -133,6 +133,50 @@ describe("PluginLoader module", function()
         _G.dofile:revert()
     end)
 
+    it("does not execute disabled plugin metadata in hardened offline mode", function()
+        local Device = require("device")
+        stub(Device, "isHardenedOffline")
+        Device.isHardenedOffline.returns(true)
+        PluginLoader = package.reload("pluginloader")
+        PluginLoader.enabled_plugins = {}
+        PluginLoader.disabled_plugins = {}
+        stub(_G, "dofile")
+
+        PluginLoader:_load({ {
+            main = "plugins/autodim.koplugin/_meta.lua",
+            meta = "plugins/autodim.koplugin/_meta.lua",
+            path = "plugins/autodim.koplugin",
+            disabled = true,
+            name = "autodim",
+        } })
+
+        assert.stub(_G.dofile).was.called(0)
+        assert.equals("autodim", PluginLoader.disabled_plugins[1].name)
+
+        _G.dofile:revert()
+        Device.isHardenedOffline:revert()
+    end)
+
+    it("discovers only allowlisted bundled plugins in hardened offline mode", function()
+        local Device = require("device")
+        stub(Device, "isHardenedOffline")
+        Device.isHardenedOffline.returns(true)
+        PluginLoader = package.reload("pluginloader")
+        local lfs_mock = require("libs/libkoreader-lfs")
+        lfs_mock.dir_results.plugins = {
+            ".", "..", "autodim.koplugin", "httpinspector.koplugin",
+        }
+        lfs_mock.attributes_results["plugins/autodim.koplugin"] = { mode = "directory" }
+        lfs_mock.attributes_results["plugins/httpinspector.koplugin"] = { mode = "directory" }
+        G_reader_settings:saveSetting("extra_plugin_paths", { "/untrusted/plugins" })
+
+        local discovered = PluginLoader:_discover()
+
+        assert.equals(1, #discovered)
+        assert.equals("autodim", discovered[1].name)
+        Device.isHardenedOffline:revert()
+    end)
+
     it("stores plugin manager toggles by internal plugin id", function()
         stub(PluginLoader, "loadPlugins", function()
             return {

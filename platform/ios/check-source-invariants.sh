@@ -10,6 +10,32 @@ PLIST="${PLATFORM_DIR}/Info.plist.in"
 PROJECT="${PLATFORM_DIR}/project.yml"
 COVER_BROWSER="${REPO_ROOT}/plugins/coverbrowser.koplugin/bookinfomanager.lua"
 IMPORT_PLUGIN="${REPO_ROOT}/plugins/iosimporter.koplugin/main.lua"
+PLUGIN_LOADER="${REPO_ROOT}/frontend/pluginloader.lua"
+DEVICE="${REPO_ROOT}/frontend/device/sdl/device.lua"
+READER_UI="${REPO_ROOT}/frontend/apps/reader/readerui.lua"
+FILE_MANAGER="${REPO_ROOT}/frontend/apps/filemanager/filemanager.lua"
+BOOK_SHORTCUTS="${REPO_ROOT}/plugins/bookshortcuts.koplugin/main.lua"
+COMMON_INFO="${REPO_ROOT}/frontend/ui/elements/common_info_menu_table.lua"
+COMMON_SETTINGS="${REPO_ROOT}/frontend/ui/elements/common_settings_menu_table.lua"
+DOC_SETTINGS="${REPO_ROOT}/frontend/docsettings.lua"
+DOCUMENT_POLICY="${REPO_ROOT}/frontend/document/documentpathpolicy.lua"
+DOCUMENT_REGISTRY="${REPO_ROOT}/frontend/document/documentregistry.lua"
+FILE_MANAGER_COLLECTION="${REPO_ROOT}/frontend/apps/filemanager/filemanagercollection.lua"
+FILE_MANAGER_HISTORY="${REPO_ROOT}/frontend/apps/filemanager/filemanagerhistory.lua"
+FILE_MANAGER_SHORTCUTS="${REPO_ROOT}/frontend/apps/filemanager/filemanagershortcuts.lua"
+MIGRATIONS="${REPO_ROOT}/frontend/ui/data/onetime_migration.lua"
+READER_ENTRY="${REPO_ROOT}/reader.lua"
+READER_HIGHLIGHT="${REPO_ROOT}/frontend/apps/reader/modules/readerhighlight.lua"
+READER_BOOKMARK="${REPO_ROOT}/frontend/apps/reader/modules/readerbookmark.lua"
+READER_ANNOTATION="${REPO_ROOT}/frontend/apps/reader/modules/readerannotation.lua"
+SCREENSHOTER="${REPO_ROOT}/frontend/ui/widget/screenshoter.lua"
+DISPATCHER="${REPO_ROOT}/frontend/dispatcher.lua"
+THIRD_PARTY="${REPO_ROOT}/frontend/device/thirdparty.lua"
+INPUT="${REPO_ROOT}/frontend/device/input.lua"
+READ_HISTORY="${REPO_ROOT}/frontend/readhistory.lua"
+FILE_MANAGER_UTIL="${REPO_ROOT}/frontend/apps/filemanager/filemanagerutil.lua"
+FILE_MANAGER_BOOKINFO="${REPO_ROOT}/frontend/apps/filemanager/filemanagerbookinfo.lua"
+ALLOWLIST="${PLATFORM_DIR}/plugin-allowlist.txt"
 
 require_source() {
     local source="$1"
@@ -25,6 +51,26 @@ reject_source() {
     local needle="$2"
     if grep -Fq -- "${needle}" "${source}"; then
         echo "error: ${source} contains forbidden source pattern: ${needle}" >&2
+        exit 1
+    fi
+}
+
+require_file_source() {
+    local file="$1"
+    local needle="$2"
+    local label="$3"
+    if ! grep -Fq -- "${needle}" "${file}"; then
+        echo "error: ${label} is missing required source invariant: ${needle}" >&2
+        exit 1
+    fi
+}
+
+reject_file_source() {
+    local file="$1"
+    local needle="$2"
+    local label="$3"
+    if grep -Fq -- "${needle}" "${file}"; then
+        echo "error: ${label} contains forbidden source pattern: ${needle}" >&2
         exit 1
     fi
 }
@@ -108,4 +154,183 @@ if ! grep -Fq -- 'if os.getenv("KO_IOS") ~= "1" and not self.cre_cache_overriden
     exit 1
 fi
 
-echo "[check-source-invariants] iOS launcher, import, and cache invariants satisfied"
+expected_plugins="$(mktemp)"
+runtime_plugins="$(mktemp)"
+trap 'rm -f "${expected_plugins}" "${runtime_plugins}"' EXIT
+LC_ALL=C sort -u "${ALLOWLIST}" > "${expected_plugins}"
+sed -n '/local IOS_PLUGIN_ALLOWLIST = {/,/^}/p' "${PLUGIN_LOADER}" |
+    sed -n 's/^[[:space:]]*\([A-Za-z0-9_]*\)[[:space:]]*=[[:space:]]*true,.*/\1.koplugin/p' |
+    LC_ALL=C sort -u > "${runtime_plugins}"
+
+raw_plugin_count="$(grep -cve '^[[:space:]]*$' "${ALLOWLIST}")"
+unique_plugin_count="$(wc -l < "${expected_plugins}" | tr -d ' ')"
+if [ "${unique_plugin_count}" -eq 0 ] \
+        || [ "${raw_plugin_count}" -ne "${unique_plugin_count}" ]; then
+    echo "error: strict iOS allowlist must contain unique non-empty plugin entries" >&2
+    exit 1
+fi
+if ! cmp -s "${expected_plugins}" "${runtime_plugins}"; then
+    echo "error: runtime and bundle iOS plugin allowlists differ" >&2
+    diff -u "${expected_plugins}" "${runtime_plugins}" >&2 || true
+    exit 1
+fi
+if grep -Fq -- 'movetoarchive.koplugin' "${ALLOWLIST}"; then
+    echo "error: subprocess-based movetoarchive plugin is forbidden on strict iOS" >&2
+    exit 1
+fi
+if grep -Fq -- 'japanese.koplugin' "${ALLOWLIST}"; then
+    echo "error: subprocess-based Japanese dictionary plugin is forbidden on strict iOS" >&2
+    exit 1
+fi
+
+while IFS= read -r plugin; do
+    plugin_dir="${REPO_ROOT}/plugins/${plugin}"
+    if [ ! -d "${plugin_dir}" ]; then
+        echo "error: allowlisted plugin source is missing: ${plugin}" >&2
+        exit 1
+    fi
+    for module in socket ssl turbo zmq czmq; do
+        if grep -RFq -- "require(\"${module}" "${plugin_dir}" \
+                || grep -RFq -- "require('${module}" "${plugin_dir}"; then
+            echo "error: allowlisted plugin imports network module ${module}: ${plugin}" >&2
+            exit 1
+        fi
+    done
+done < "${expected_plugins}"
+
+ios_probe_line="$(sed -n '/if os.getenv("KO_IOS") == "1" then/=' "${DEVICE}" | head -n1)"
+appimage_probe_line="$(sed -n '/if os.getenv("APPIMAGE") then/=' "${DEVICE}" | head -n1)"
+if [ -z "${ios_probe_line}" ] || [ -z "${appimage_probe_line}" ] \
+        || [ "${ios_probe_line}" -ge "${appimage_probe_line}" ]; then
+    echo "error: iOS device probe must run before SDL emulator/desktop probes" >&2
+    exit 1
+fi
+if ! grep -Fq -- 'return os.getenv("KO_HARDENED_OFFLINE") == "1"' "${DEVICE}"; then
+    echo "error: iOS hardened capability does not use KO_HARDENED_OFFLINE" >&2
+    exit 1
+fi
+emulator_guard="$({ sed -n '/Hardened iOS ignores emulator-controlled environment input\./,/self\.hasClipboard = yes/p' "${DEVICE}" || true; })"
+if ! grep -Fq -- 'if not self:isHardenedOffline() then' <<< "${emulator_guard}" \
+        || ! grep -Fq -- 'loadstring("return " .. viewport)' <<< "${emulator_guard}"; then
+    echo "error: hardened iOS does not isolate SDL emulator environment input" >&2
+    exit 1
+fi
+if ! grep -Fq -- 'local NetInfo = not is_hardened_ios and require("ffi/netinfo")' \
+        "${REPO_ROOT}/frontend/device/generic/device.lua"; then
+    echo "error: generic device eagerly loads netinfo on hardened iOS" >&2
+    exit 1
+fi
+if ! grep -Fq -- 'local ReaderWikipedia = not Device:isHardenedOffline() and require("apps/reader/modules/readerwikipedia")' "${READER_UI}" \
+        || ! grep -Fq -- 'local ReaderWikipedia = not Device:isHardenedOffline() and require("apps/reader/modules/readerwikipedia")' "${FILE_MANAGER}"; then
+    echo "error: Wikipedia module may be loaded by the hardened UI" >&2
+    exit 1
+fi
+if ! grep -Fq -- 'local ReaderDictionary = not Device:isHardenedOffline() and require("apps/reader/modules/readerdictionary")' "${READER_UI}" \
+        || ! grep -Fq -- 'local ReaderDictionary = not Device:isHardenedOffline() and require("apps/reader/modules/readerdictionary")' "${FILE_MANAGER}" \
+        || ! grep -Fq -- 'local ReaderDictionary = not Device:isHardenedOffline() and require("apps/reader/modules/readerdictionary")' "${DISPATCHER}"; then
+    echo "error: subprocess-backed dictionary module may be loaded by the hardened UI" >&2
+    exit 1
+fi
+require_file_source "${DISPATCHER}" 'show_network_info = {category="none", event="ShowNetworkInfo", title=_("Show network info"), device=true, separator=true, condition=not Device:isHardenedOffline()}' "dispatcher"
+if ! grep -Fq -- 'if os.getenv("KO_IOS") == "1" and os.getenv("KO_HARDENED_OFFLINE") == "1" then' \
+        "${REPO_ROOT}/frontend/userpatch.lua"; then
+    echo "error: userpatch is not fail-closed for hardened iOS" >&2
+    exit 1
+fi
+
+# Every persisted or direct open path must converge on the canonical Books
+# policy. The registry is the final rendering boundary; the UI guards provide
+# deterministic fallback before destructive teardown or auxiliary viewers.
+require_file_source "${DOCUMENT_POLICY}" 'local canonical = path and ffiUtil.realpath(path)' "document path policy"
+require_file_source "${DOCUMENT_POLICY}" 'util.stringStartsWith(canonical, root .. "/")' "document path policy"
+reject_file_source "${DOCUMENT_POLICY}" 'registerInternalDocument' "document path policy"
+require_file_source "${DOCUMENT_REGISTRY}" 'DocumentPathPolicy:resolveDocument(file)' "document registry"
+require_file_source "${READER_UI}" 'DocumentPathPolicy:resolveDocument(file)' "reader UI"
+require_file_source "${READER_ENTRY}" 'DocumentPathPolicy:resolveDocument(last_file)' "reader startup"
+require_file_source "${READER_ENTRY}" 'G_reader_settings:delSetting("lastfile")' "reader startup"
+require_file_source "${READER_ENTRY}" 'G_reader_settings:saveSetting("start_with", start_with)' "reader startup"
+require_file_source "${FILE_MANAGER_HISTORY}" 'filemanagerutil.isPathInsideHome(v.file)' "history boundary"
+require_file_source "${FILE_MANAGER_COLLECTION}" 'filemanagerutil.isPathInsideHome(item.file)' "collection boundary"
+require_file_source "${FILE_MANAGER_SHORTCUTS}" 'filemanagerutil.isPathInsideHome(folder)' "folder shortcut boundary"
+require_file_source "${BOOK_SHORTCUTS}" 'if not filemanagerutil.isPathInsideHome(path) then return end' "book shortcut boundary"
+require_file_source "${FILE_MANAGER}" 'filemanagerutil.isPathInsideHome(selected_file)' "selected-file boundary"
+require_file_source "${FILE_MANAGER}" 'ok = purgeHardenedDirectory(file)' "recursive delete boundary"
+reject_file_source "${FILE_MANAGER}" 'Device:isHardenedOffline() and purgeHardenedDirectory(file) or ffiUtil.purgeDir(file)' "recursive delete boundary"
+reject_file_source "${READ_HISTORY}" 'hardened_offline and DocumentPathPolicy:resolveDocument' "history boundary"
+require_file_source "${READ_HISTORY}" 'file_path = DocumentPathPolicy:resolveDocument(input_file)' "history boundary"
+
+subprocess_fail_closed_count="$(grep -Fc -- 'if Device:isHardenedOffline() then return false end' "${FILE_MANAGER}" || true)"
+if [ "${subprocess_fail_closed_count}" -lt 8 ]; then
+    echo "error: subprocess-backed file operations are not all fail-closed" >&2
+    exit 1
+fi
+
+quickstart_guard="$({ sed -n '/if not Device:isHardenedOffline() then/,/common_info.quickstart_guide = {/p' "${COMMON_INFO}" || true; })"
+if ! grep -Fq -- 'common_info.quickstart_guide = {' <<< "${quickstart_guard}"; then
+    echo "error: QuickStart remains reachable in hardened iOS" >&2
+    exit 1
+fi
+reject_file_source "${REPO_ROOT}/frontend/ui/quickstart.lua" 'registerInternalDocument' "QuickStart"
+
+require_file_source "${DOC_SETTINGS}" 'if hardened_offline then return { "hash" } end' "DocSettings"
+require_file_source "${DOC_SETTINGS}" 'return SafeSettings.loadTable(path)' "DocSettings"
+require_file_source "${DOC_SETTINGS}" 'local candidates_list = hardened_offline and {' "DocSettings"
+require_file_source "${DOC_SETTINGS}" 'if file_path ~= ""' "DocSettings candidates"
+require_file_source "${DOC_SETTINGS}" 'and (not hardened_offline or isPrivateMetadataPath(file_path))' "DocSettings candidates"
+candidate_builder="$({ sed -n '/local function buildCandidates/,/local function getOrderedLocationCandidates/p' "${DOC_SETTINGS}" || true; })"
+candidate_private_guard_line="$(grep -nF -- 'isPrivateMetadataPath(file_path)' <<< "${candidate_builder}" | head -n1 | cut -d: -f1)"
+candidate_file_probe_line="$(grep -nF -- 'isFile(file_path)' <<< "${candidate_builder}" | head -n1 | cut -d: -f1)"
+if [ -z "${candidate_private_guard_line}" ] || [ -z "${candidate_file_probe_line}" ] \
+        || [ "${candidate_private_guard_line}" -ge "${candidate_file_probe_line}" ]; then
+    echo "error: DocSettings probes a candidate before checking its private canonical path" >&2
+    exit 1
+fi
+private_candidate_guard_count="$(grep -Fc -- 'not hardened_offline or isPrivateMetadataPath(candidate_path)' "${DOC_SETTINGS}" || true)"
+if [ "${private_candidate_guard_count}" -lt 2 ]; then
+    echo "error: DocSettings candidate reads or deletion may escape private metadata storage" >&2
+    exit 1
+fi
+require_file_source "${COMMON_SETTINGS}" 'common_settings.document_metadata_location = nil' "metadata menu"
+require_file_source "${COMMON_SETTINGS}" 'common_settings.document_metadata_arc = nil' "metadata menu"
+require_file_source "${MIGRATIONS}" 'if last_migration_date < 20220930 and not Device:isHardenedOffline() then' "legacy defaults migration"
+require_file_source "${THIRD_PARTY}" 'if hardened_offline then' "third-party integration"
+require_file_source "${THIRD_PARTY}" 'o.dicts = {}' "third-party integration"
+require_file_source "${INPUT}" 'if os.getenv("KO_HARDENED_OFFLINE") ~= "1" then' "custom input map"
+require_file_source "${FILE_MANAGER_UTIL}" 'if Device:isHardenedOffline() then return false end' "script execution"
+
+require_file_source "${SCREENSHOTER}" 'local screenshot_dir = DataStorage:getDataDir() .. "/screenshots"' "screenshot storage"
+require_file_source "${SCREENSHOTER}" 'if Device:isHardenedOffline() or not screenshot_name then' "screenshot storage"
+require_file_source "${SCREENSHOTER}" 'if Device:isHardenedOffline() then return false end' "screenshot folder chooser"
+require_file_source "${READER_ANNOTATION}" 'if not dir or not DocSettings.preparePrivateMetadataDir(dir) then return end' "annotation export"
+require_file_source "${READER_BOOKMARK}" 'table.remove(menu_items.bookmarks_settings.sub_item_table)' "annotation export menu"
+require_file_source "${FILE_MANAGER_BOOKINFO}" 'if is_file and not Device:isHardenedOffline() then' "notebook metadata"
+require_file_source "${FILE_MANAGER_BOOKINFO}" 'if Device:isHardenedOffline() then return false end' "custom cover and notebook actions"
+
+# Keep ordinary platforms byte-for-byte compatible in action ordering.
+require_file_source "${READER_HIGHLIGHT}" 'table.insert(long_press_action, 6, {_("Translate"), "translate"})' "ReaderHighlight"
+require_file_source "${READER_HIGHLIGHT}" 'table.insert(long_press_action, 7, {_("Wikipedia"), "wikipedia"})' "ReaderHighlight"
+require_file_source "${READER_HIGHLIGHT}" 'table.insert(long_press_action, 8, {_("Dictionary"), "dictionary"})' "ReaderHighlight"
+dictionary_guard_count="$(grep -Fc -- 'if not self.ui.dictionary then return false end' "${READER_HIGHLIGHT}" || true)"
+if [ "${dictionary_guard_count}" -lt 2 ]; then
+    echo "error: ReaderHighlight dictionary paths are not fail-closed" >&2
+    exit 1
+fi
+
+for bundler in do_ios_bundle.sh embed-bundle-payload.sh; do
+    if ! grep -Fq -- 'copy-allowed-plugins.sh' "${PLATFORM_DIR}/${bundler}" \
+            || ! grep -Fq -- 'strip-network-payload.sh' "${PLATFORM_DIR}/${bundler}" \
+            || ! grep -Fq -- 'check-bundle-invariants.sh' "${PLATFORM_DIR}/${bundler}"; then
+        echo "error: ${bundler} does not enforce the strict payload pipeline" >&2
+        exit 1
+    fi
+    first_check_line="$(grep -nF -- 'check-bundle-invariants.sh' "${PLATFORM_DIR}/${bundler}" | head -n1 | cut -d: -f1)"
+    last_check_line="$(grep -nF -- 'check-bundle-invariants.sh' "${PLATFORM_DIR}/${bundler}" | tail -n1 | cut -d: -f1)"
+    precompile_line="$(grep -nF -- 'precompile-lua.sh' "${PLATFORM_DIR}/${bundler}" | tail -n1 | cut -d: -f1)"
+    if [ "${first_check_line}" -ge "${precompile_line}" ] \
+            || [ "${last_check_line}" -le "${precompile_line}" ]; then
+        echo "error: ${bundler} must check source before and payload after Lua precompilation" >&2
+        exit 1
+    fi
+done
+
+echo "[check-source-invariants] iOS source invariants satisfied"

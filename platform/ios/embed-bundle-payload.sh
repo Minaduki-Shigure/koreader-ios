@@ -46,16 +46,24 @@ rsync -aL --delete \
     --exclude 'screenshots' \
     --exclude 'spec' \
     --exclude 'tools' \
+    --exclude 'plugins' \
+    --exclude 'patches' \
+    --exclude 'update_once.marker' \
+    --exclude 'afterupdate.marker' \
     --exclude '*.dSYM' \
-    --exclude 'plugins/SSH.koplugin' \
-    --exclude 'plugins/autofrontlight.koplugin' \
-    --exclude 'plugins/hello.koplugin' \
-    --exclude 'plugins/timesync.koplugin' \
     "${STAGING_KOREADER}/" "${APP_DIR}/app/"
+
+"${SRCROOT}/platform/ios/copy-allowed-plugins.sh" \
+    "${STAGING_KOREADER}/plugins" "${APP_DIR}/app/plugins"
+rm -rf "${APP_DIR}/app/patches"
+rm -f "${APP_DIR}/app/update_once.marker" "${APP_DIR}/app/afterupdate.marker"
+"${SRCROOT}/platform/ios/strip-network-payload.sh" "${APP_DIR}/app"
+"${SRCROOT}/platform/ios/check-bundle-invariants.sh" "${APP_DIR}/app"
 
 # --- 1.5) Precompile every .lua to LuaJIT bytecode in place. Skips if
 # we don't have a host luajit available; only a perf optimisation.
 "${SRCROOT}/platform/ios/precompile-lua.sh" "${APP_DIR}/app" || true
+"${SRCROOT}/platform/ios/check-bundle-invariants.sh" "${APP_DIR}/app"
 
 # --- 2) Re-sign every embedded dylib with the same identity as the app.
 # Pick the most-resolved identity Xcode passed us, falling back to ad-hoc

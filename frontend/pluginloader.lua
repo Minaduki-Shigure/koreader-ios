@@ -13,6 +13,7 @@ Plugins are controlled by the following settings.
 ]]
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
+local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local dbg = require("dbg")
@@ -43,6 +44,7 @@ local BUILTIN_PLUGINS = {
     ["hello"] = true,
     ["hotkeys"] = true,
     ["httpinspector"] = true,
+    ["iosimporter"] = true,
     ["japanese"] = true,
     ["keepalive"] = true,
     ["kosync"] = true,
@@ -61,6 +63,24 @@ local BUILTIN_PLUGINS = {
     ["timesync"] = true,
     ["vocabbuilder"] = true,
     ["wallabag"] = true,
+}
+
+-- Keep this in sync with platform/ios/plugin-allowlist.txt. The bundle copy
+-- step enforces the same set physically; this second gate fails closed if an
+-- unexpected directory nevertheless appears in the immutable app payload.
+local IOS_PLUGIN_ALLOWLIST = {
+    autodim = true,
+    autoturn = true,
+    batterystat = true,
+    bookshortcuts = true,
+    coverbrowser = true,
+    gestures = true,
+    hotkeys = true,
+    iosimporter = true,
+    perceptionexpander = true,
+    profiles = true,
+    qrclipboard = true,
+    readtimer = true,
 }
 
 local DEPRECATION_MESSAGES = {
@@ -173,29 +193,32 @@ local PluginLoader = {
 
 function PluginLoader:_discover()
     local plugins_disabled = G_reader_settings:readSetting("plugins_disabled", {})
+    local strict_offline = Device:isHardenedOffline()
     local discovered = {}
     local lookup_path_list = { DEFAULT_PLUGIN_PATH }
-    local extra_paths = G_reader_settings:readSetting("extra_plugin_paths")
-    if extra_paths then
-        if type(extra_paths) == "string" then
-            extra_paths = { extra_paths }
-        end
-        if type(extra_paths) == "table" then
-            for _,extra_path in ipairs(extra_paths) do
-                local extra_path_mode = lfs.attributes(extra_path, "mode")
-                if extra_path_mode == "directory" and extra_path ~= DEFAULT_PLUGIN_PATH then
-                    table.insert(lookup_path_list, extra_path)
+    if not strict_offline then
+        local extra_paths = G_reader_settings:readSetting("extra_plugin_paths")
+        if extra_paths then
+            if type(extra_paths) == "string" then
+                extra_paths = { extra_paths }
+            end
+            if type(extra_paths) == "table" then
+                for _,extra_path in ipairs(extra_paths) do
+                    local extra_path_mode = lfs.attributes(extra_path, "mode")
+                    if extra_path_mode == "directory" and extra_path ~= DEFAULT_PLUGIN_PATH then
+                        table.insert(lookup_path_list, extra_path)
+                    end
                 end
+            else
+                logger.err("extra_plugin_paths config only accepts string or table value")
             end
         else
-            logger.err("extra_plugin_paths config only accepts string or table value")
-        end
-    else
-        local data_dir = require("datastorage"):getDataDir()
-        if data_dir ~= "." then
-            local extra_path = data_dir .. "/plugins/"
-            G_reader_settings:saveSetting("extra_plugin_paths", { extra_path })
-            table.insert(lookup_path_list, extra_path)
+            local data_dir = require("datastorage"):getDataDir()
+            if data_dir ~= "." then
+                local extra_path = data_dir .. "/plugins/"
+                G_reader_settings:saveSetting("extra_plugin_paths", { extra_path })
+                table.insert(lookup_path_list, extra_path)
+            end
         end
     end
     for _, lookup_path in ipairs(lookup_path_list) do
@@ -209,19 +232,25 @@ function PluginLoader:_discover()
                 local metafile = plugin_root.."/_meta.lua"
                 local plugin_name = entry:sub(1, -10)
                 local disabled = false
-                if (plugins_disabled and plugins_disabled[plugin_name]) or
+                if strict_offline and not IOS_PLUGIN_ALLOWLIST[plugin_name] then
+                    logger.warn("Ignoring plugin outside the iOS allowlist:", plugin_name)
+                elseif (plugins_disabled and plugins_disabled[plugin_name]) or
                         (G_reader_settings:isTrue("plugins_disable_external") and not BUILTIN_PLUGINS[plugin_name]) then
-                    mainfile = metafile
+                    if not strict_offline then
+                        mainfile = metafile
+                    end
                     disabled = true
                 end
 
-                table.insert(discovered, {
-                    ["main"] = mainfile,
-                    ["meta"] = metafile,
-                    ["path"] = plugin_root,
-                    ["disabled"] = disabled,
-                    ["name"] = plugin_name,
-                })
+                if not strict_offline or IOS_PLUGIN_ALLOWLIST[plugin_name] then
+                    table.insert(discovered, {
+                        ["main"] = mainfile,
+                        ["meta"] = metafile,
+                        ["path"] = plugin_root,
+                        ["disabled"] = disabled,
+                        ["name"] = plugin_name,
+                    })
+                end
             end
         end
     end
@@ -239,30 +268,42 @@ function PluginLoader:_load(t)
         metafile = v.meta
         plugin_root = v.path
         disabled = v.disabled
-        package.path = string.format("%s/?.lua;%s", plugin_root, package_path)
-        package.cpath = string.format("%s/lib/?.so;%s", plugin_root, package_cpath)
-        local ok, plugin_module = pcall(dofile, mainfile)
-        if not ok or not plugin_module then
-            logger.warn("Error when loading", mainfile, plugin_module)
-        elseif type(plugin_module.disabled) ~= "boolean" or not plugin_module.disabled then
-            plugin_module.path = plugin_root
-            plugin_module.name = v.name
-            if disabled then
-                table.insert(self.disabled_plugins, plugin_module)
-            else
-                local ok_meta, plugin_metamodule = pcall(dofile, metafile)
-                if ok_meta and plugin_metamodule then
-                    for k, module in pairs(plugin_metamodule) do
-                        if k ~= "name" then
-                            plugin_module[k] = module
-                        else
-                            logger.warn("PluginLoader:", plugin_module.name, "name in _meta.lua, is deprecated and will be ignored.")
+        if Device:isHardenedOffline() and disabled then
+            -- Do not execute _meta.lua for disabled plugins. Metadata files are
+            -- executable Lua, so treating them as passive data is unsafe.
+            table.insert(self.disabled_plugins, {
+                name = v.name,
+                fullname = v.name,
+                description = _("Disabled"),
+                path = plugin_root,
+                disabled = true,
+            })
+        else
+            package.path = string.format("%s/?.lua;%s", plugin_root, package_path)
+            package.cpath = string.format("%s/lib/?.so;%s", plugin_root, package_cpath)
+            local ok, plugin_module = pcall(dofile, mainfile)
+            if not ok or not plugin_module then
+                logger.warn("Error when loading", mainfile, plugin_module)
+            elseif type(plugin_module.disabled) ~= "boolean" or not plugin_module.disabled then
+                plugin_module.path = plugin_root
+                plugin_module.name = v.name
+                if disabled then
+                    table.insert(self.disabled_plugins, plugin_module)
+                else
+                    local ok_meta, plugin_metamodule = pcall(dofile, metafile)
+                    if ok_meta and plugin_metamodule then
+                        for k, module in pairs(plugin_metamodule) do
+                            if k ~= "name" then
+                                plugin_module[k] = module
+                            else
+                                logger.warn("PluginLoader:", plugin_module.name, "name in _meta.lua, is deprecated and will be ignored.")
+                            end
                         end
                     end
+                    sandboxPluginEventHandlers(plugin_module)
+                    table.insert(self.enabled_plugins, plugin_module)
+                    logger.dbg("Plugin loaded", plugin_module.name)
                 end
-                sandboxPluginEventHandlers(plugin_module)
-                table.insert(self.enabled_plugins, plugin_module)
-                logger.dbg("Plugin loaded", plugin_module.name)
             end
         end
     end
@@ -363,7 +404,7 @@ function PluginLoader:genPluginManagerSubItem()
 end
 
 function PluginLoader:showPluginDialog(plugin, touchmenu_instance)
-    local plugins_disabled = G_reader_settings:readSetting("plugins_disabled")
+    local plugins_disabled = G_reader_settings:readSetting("plugins_disabled") or {}
     local function set_and_restart(enable, disabled)
         plugin.enable = enable
         plugins_disabled[plugin.name] = disabled

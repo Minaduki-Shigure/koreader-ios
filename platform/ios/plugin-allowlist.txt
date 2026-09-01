@@ -1,0 +1,12 @@
+autodim.koplugin
+autoturn.koplugin
+batterystat.koplugin
+bookshortcuts.koplugin
+coverbrowser.koplugin
+gestures.koplugin
+hotkeys.koplugin
+iosimporter.koplugin
+perceptionexpander.koplugin
+profiles.koplugin
+qrclipboard.koplugin
+readtimer.koplugin

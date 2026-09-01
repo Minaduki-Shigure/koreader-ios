@@ -24,7 +24,7 @@ local userpatch = {
     applyPatches = function(priority) end, -- to be overwritten, if the device allows it.
 }
 
-if os.getenv("KO_HARDENED_OFFLINE") == "1" then
+if os.getenv("KO_IOS") == "1" and os.getenv("KO_HARDENED_OFFLINE") == "1" then
     function userpatch.arePatchesDisabled() return true end
     function userpatch.togglePatchesDisabled() end
     function userpatch.registerPatchPluginFunc() end

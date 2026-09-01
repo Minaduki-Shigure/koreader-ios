@@ -29,14 +29,16 @@ end
 common_info.help = {
     text = _("Help"),
 }
-common_info.quickstart_guide = {
-    text = _("Quickstart guide"),
-    callback = function()
-        local QuickStart = require("ui/quickstart")
-        local ReaderUI = require("apps/reader/readerui")
-        ReaderUI:showReader(QuickStart:getQuickStart())
-    end
-}
+if not Device:isHardenedOffline() then
+    common_info.quickstart_guide = {
+        text = _("Quickstart guide"),
+        callback = function()
+            local QuickStart = require("ui/quickstart")
+            local ReaderUI = require("apps/reader/readerui")
+            ReaderUI:showReader(QuickStart:getQuickStart())
+        end
+    }
+end
 common_info.search_menu = {
     text = _("Menu search"),
     callback = function()
@@ -104,17 +106,19 @@ common_info.report_bug = {
         })
     end
 }
-common_info.plugins_disable_external = {
-    text = _("Disable external plugins and user-patches"),
-    checked_func = function()
-        return G_reader_settings:isTrue("plugins_disable_external")
-    end,
-    callback = function()
-        G_reader_settings:flipNilOrFalse("plugins_disable_external")
-        userpatch.togglePatchesDisabled()
-        UIManager:askForRestart()
-    end,
-}
+if not Device:isHardenedOffline() then
+    common_info.plugins_disable_external = {
+        text = _("Disable external plugins and user-patches"),
+        checked_func = function()
+            return G_reader_settings:isTrue("plugins_disable_external")
+        end,
+        callback = function()
+            G_reader_settings:flipNilOrFalse("plugins_disable_external")
+            userpatch.togglePatchesDisabled()
+            UIManager:askForRestart()
+        end,
+    }
+end
 common_info.version = {
     text = T(_("Version: %1"), Version:getShortVersion()),
     keep_menu_open = true,
