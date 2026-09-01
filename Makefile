@@ -7,9 +7,12 @@ KOR_BASE ?= base
 include $(KOR_BASE)/Makefile.defs
 
 RELEASE_DATE := $(shell git show -s --format=format:"%cd" --date=short HEAD)
-# We want VERSION to carry the version of the KOReader main repo, not that of koreader-base
-VERSION := $(shell git describe HEAD)
-RELEASE_EPOCH := $(shell git log -1 --format='%cs' $(word 1,$(subst -, ,$(VERSION))))
+# Keep KOReader's runtime revision on its upstream vYYYY.MM tag lineage. iOS
+# distribution tags use a separate schema that the frontend version parser does
+# not accept and must not become git-rev.
+KOREADER_VERSION_TAG := $(shell git describe --abbrev=0 --match='v[0-9]*' HEAD)
+VERSION := $(shell git describe --match='v[0-9]*' HEAD)
+RELEASE_EPOCH := $(shell git log -1 --format='%cs' $(KOREADER_VERSION_TAG))
 # Only append date if we're not on a whole version, like v2018.11
 ifneq (,$(findstring -,$(VERSION)))
 	VERSION := $(VERSION)_$(RELEASE_DATE)

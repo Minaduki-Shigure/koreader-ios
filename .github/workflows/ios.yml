@@ -161,10 +161,18 @@ jobs:
             OUTPUT_DIR=build/host
             INSTALL_DIR=install/host
             PARALLEL_JOBS="${PARALLEL_JOBS}"
-            testfront
           )
 
-          "${host_make[@]}" RUNTESTS="${targeted_runner}" \
+          "${host_make[@]}" all 2>&1 | \
+            tee artifacts/logs/build-front-test-host.log
+          runtime_revision="$(cat install/host/koreader/git-rev)"
+          echo "KOReader runtime revision: ${runtime_revision}"
+          if [[ ! "${runtime_revision}" =~ ^v[0-9]{4}\.[0-9]{2}([.-]|$) ]]; then
+            echo "::error title=Invalid KOReader runtime revision::git-rev must use the upstream vYYYY.MM schema, got ${runtime_revision}"
+            exit 1
+          fi
+
+          "${host_make[@]}" testfront RUNTESTS="${targeted_runner}" \
             T=spec/front/unit/safesettings_spec.lua 2>&1 | \
             tee artifacts/logs/safesettings.log
 
@@ -172,11 +180,12 @@ jobs:
             spec/front/unit/docsettings_hardened_ios_spec.lua \
             spec/front/unit/filemanagerutil_ios_spec.lua \
             spec/front/unit/writable_lua_hardened_ios_spec.lua; do
-            "${host_make[@]}" RUNTESTS="${hardened_runner}" T="${spec}" \
+            "${host_make[@]}" testfront RUNTESTS="${hardened_runner}" T="${spec}" \
               2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
           done
 
-          "${host_make[@]}" 2>&1 | tee artifacts/logs/testfront.log
+          "${host_make[@]}" testfront 2>&1 | \
+            tee artifacts/logs/testfront.log
 
       - name: Generate Xcode project
         run: |
