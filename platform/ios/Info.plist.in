@@ -70,9 +70,9 @@
         </dict>
     </dict>
     <key>UIFileSharingEnabled</key>
-    <true/>
+    <false/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
-    <true/>
+    <false/>
     <key>NSHumanReadableCopyright</key>
     <string>© KOReader contributors</string>
     <key>UIStatusBarHidden</key>
@@ -83,26 +83,5 @@
     <true/>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Document</string>
-            <key>CFBundleTypeRole</key>
-            <string>Viewer</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>com.adobe.pdf</string>
-                <string>org.idpf.epub-container</string>
-                <string>com.amazon.mobi8-ebook</string>
-                <string>com.amazon.mobi-ebook</string>
-                <string>org.djvu.djvu</string>
-                <string>public.text</string>
-                <string>public.html</string>
-            </array>
-        </dict>
-    </array>
 </dict>
 </plist>

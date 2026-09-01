@@ -1,295 +1,553 @@
-/* iOS file/folder picker bridge.
+/* Strict iOS document import and safe-area bridge.
  *
- * KOReader's Lua frontend calls into the C API below to surface iOS'
- * native UIDocumentPickerViewController. We expose folder picking
- * because that's what makes external providers (iCloud Drive, Dropbox,
- * Drive, OneDrive, etc.) usefully browsable from inside KOReader's
- * existing file browser:
- *
- *   1. User picks a folder once → iOS returns a security-scoped URL.
- *   2. We serialize an NSURL bookmark (base64) for persistence.
- *   3. Each launch we resolve the bookmark and start accessing the
- *      security-scoped resource — that makes the folder appear at a
- *      real filesystem path that KOReader's lfs.dir / fopen can use.
- *
- * The picker UI MUST be presented from the main thread. We don't know
- * whether SDL_main runs on the main thread, so we expose a non-blocking
- * "start + poll" interface that the Lua plugin drives via UIManager
- * timer ticks. This avoids deadlocking the runloop in any thread layout.
+ * The document picker is only an ingress UI. A selected file is coordinated,
+ * validated, copied into KO_BOOKS_HOME, protected, and atomically moved to its
+ * final name before Lua can see it. Provider URLs are never returned or kept.
+ * UIKit work stays on the main thread; potentially slow provider and file I/O
+ * runs on a private serial queue. Lua drives the bridge with start + poll.
  */
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+#define KO_IOS_EXPORT __attribute__((visibility("default"), used))
+#define KO_IMPORT_MAX_BYTES (2ULL * 1024ULL * 1024ULL * 1024ULL)
+#define KO_IMPORT_MAX_FILENAME_BYTES 220U
 
 typedef enum {
-    KO_PICK_IDLE = 0,
-    KO_PICK_PENDING = 1,
-    KO_PICK_DONE_OK = 2,
-    KO_PICK_DONE_CANCEL = 3,
-    KO_PICK_DONE_ERROR = 4,
-} ko_pick_state_t;
+    KO_IMPORT_IDLE = 0,
+    KO_IMPORT_PENDING = 1,
+    KO_IMPORT_DONE_OK = 2,
+    KO_IMPORT_DONE_CANCEL = 3,
+    KO_IMPORT_DONE_ERROR = 4,
+} ko_import_state_t;
 
-/* Shared state between Obj-C delegate and Lua poll calls. Only
- * mutated on the main thread (delegate callbacks) and read on the
- * Lua thread; the state field is the single point of synchronization
- * (Lua only reads result fields once state >= KO_PICK_DONE_OK). */
-static volatile ko_pick_state_t g_pick_state = KO_PICK_IDLE;
-static NSString *g_picked_path = nil;
-static NSString *g_picked_bookmark_b64 = nil;
-static NSString *g_picked_error = nil;
+static ko_import_state_t g_import_state = KO_IMPORT_IDLE;
+static NSString *g_imported_path = nil;
+static NSString *g_import_error = nil;
 
-@interface KOIOSPickerDelegate : NSObject <UIDocumentPickerDelegate>
+static NSLock *ko_import_state_lock(void) {
+    static NSLock *lock;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        lock = [[NSLock alloc] init];
+        lock.name = @"rocks.koreader.ios.import-state";
+    });
+    return lock;
+}
+
+static dispatch_queue_t ko_import_io_queue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create("rocks.koreader.ios.import-io",
+                                      DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+static void ko_finish_import(ko_import_state_t state, NSString *path,
+                             NSString *message) {
+    NSLock *lock = ko_import_state_lock();
+    [lock lock];
+    if (g_import_state == KO_IMPORT_PENDING) {
+        g_imported_path = state == KO_IMPORT_DONE_OK ? [path copy] : nil;
+        g_import_error = state == KO_IMPORT_DONE_ERROR ? [message copy] : nil;
+        g_import_state = state;
+    }
+    [lock unlock];
+}
+
+static NSError *ko_import_error(NSInteger code, NSString *description) {
+    return [NSError errorWithDomain:@"rocks.koreader.ios.import"
+                               code:code
+                           userInfo:@{NSLocalizedDescriptionKey: description}];
+}
+
+static NSSet<NSString *> *ko_allowed_extensions(void) {
+    static NSSet<NSString *> *extensions;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        /* This is intentionally narrower than "all data". It mirrors formats
+         * readable by KOReader while excluding executable scripts, settings,
+         * sidecars, and generic archives. */
+        extensions = [NSSet setWithArray:@[
+            @"azw", @"chm", @"doc", @"docm", @"docx", @"epub", @"epub3",
+            @"fb2", @"fb2.zip", @"fb3", @"htm", @"htm.zip", @"html",
+            @"html.zip", @"htmlz", @"log", @"log.zip", @"md", @"md.zip",
+            @"mobi", @"odt", @"pdb", @"prc", @"rtf", @"rtf.zip", @"svg",
+            @"tcr", @"txt", @"txt.zip", @"xhtml", @"xml",
+            @"djv", @"djvu", @"gif", @"jpeg", @"jpg", @"png", @"webp",
+            @"cbr", @"cbt", @"cbz", @"cfb", @"pdf", @"pptx", @"xlsx",
+            @"xps", @"hdp", @"j2k", @"jp2", @"jxr", @"pam", @"pbm",
+            @"pgm", @"pnm", @"ppm", @"tif", @"tiff", @"wdp",
+        ]];
+    });
+    return extensions;
+}
+
+static NSString *ko_allowed_extension(NSString *filename) {
+    NSString *lowercaseName = filename.lowercaseString;
+    NSString *bestMatch = nil;
+    for (NSString *extension in ko_allowed_extensions()) {
+        NSString *suffix = [@"." stringByAppendingString:extension];
+        if ([lowercaseName hasSuffix:suffix]
+                && (!bestMatch || extension.length > bestMatch.length)) {
+            bestMatch = extension;
+        }
+    }
+    return bestMatch;
+}
+
+static NSString *ko_truncate_utf8(NSString *value, NSUInteger byteLimit) {
+    if ([value dataUsingEncoding:NSUTF8StringEncoding].length <= byteLimit) {
+        return value;
+    }
+
+    NSMutableString *result = [NSMutableString string];
+    [value enumerateSubstringsInRange:NSMakeRange(0, value.length)
+                              options:NSStringEnumerationByComposedCharacterSequences
+                           usingBlock:^(NSString *substring, NSRange substringRange,
+                                        NSRange enclosingRange, BOOL *stop) {
+        (void)substringRange;
+        (void)enclosingRange;
+        NSString *candidate = [result stringByAppendingString:substring];
+        if ([candidate dataUsingEncoding:NSUTF8StringEncoding].length > byteLimit) {
+            *stop = YES;
+        } else {
+            [result appendString:substring];
+        }
+    }];
+    return result;
+}
+
+static NSString *ko_safe_stem(NSString *filename, NSString *extension) {
+    NSUInteger suffixLength = extension.length + 1;
+    NSString *stem = filename.length > suffixLength
+        ? [filename substringToIndex:filename.length - suffixLength]
+        : @"Book";
+    stem = [stem precomposedStringWithCanonicalMapping];
+
+    NSMutableCharacterSet *unsafe = [NSCharacterSet controlCharacterSet].mutableCopy;
+    [unsafe formUnionWithCharacterSet:NSCharacterSet.illegalCharacterSet];
+    [unsafe addCharactersInString:@"/\\:"];
+    NSMutableString *sanitized = [NSMutableString string];
+    [stem enumerateSubstringsInRange:NSMakeRange(0, stem.length)
+                             options:NSStringEnumerationByComposedCharacterSequences
+                          usingBlock:^(NSString *substring, NSRange substringRange,
+                                       NSRange enclosingRange, BOOL *stop) {
+        (void)substringRange;
+        (void)enclosingRange;
+        (void)stop;
+        if ([substring rangeOfCharacterFromSet:unsafe].location == NSNotFound) {
+            [sanitized appendString:substring];
+        } else {
+            [sanitized appendString:@"_"];
+        }
+    }];
+
+    stem = [sanitized stringByTrimmingCharactersInSet:
+                          NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    while ([stem hasPrefix:@"."]) {
+        stem = [stem substringFromIndex:1];
+    }
+    if (stem.length == 0) {
+        stem = @"Book";
+    }
+    return stem;
+}
+
+static NSURL *ko_available_destination(NSURL *booksURL, NSString *stem,
+                                       NSString *extension, NSError **error) {
+    NSFileManager *fileManager = NSFileManager.defaultManager;
+    NSUInteger extensionBytes =
+        [extension dataUsingEncoding:NSUTF8StringEncoding].length + 1;
+
+    for (NSUInteger number = 1; number <= 10000; ++number) {
+        NSString *collisionSuffix = number == 1
+            ? @""
+            : [NSString stringWithFormat:@" (%lu)", (unsigned long)number];
+        NSUInteger suffixBytes =
+            [collisionSuffix dataUsingEncoding:NSUTF8StringEncoding].length;
+        if (extensionBytes + suffixBytes >= KO_IMPORT_MAX_FILENAME_BYTES) {
+            break;
+        }
+        NSString *boundedStem = ko_truncate_utf8(
+            stem, KO_IMPORT_MAX_FILENAME_BYTES - extensionBytes - suffixBytes);
+        NSString *filename = [NSString stringWithFormat:@"%@%@.%@",
+                                                        boundedStem,
+                                                        collisionSuffix,
+                                                        extension];
+        NSURL *destination = [booksURL URLByAppendingPathComponent:filename
+                                                        isDirectory:NO];
+        if (![fileManager fileExistsAtPath:destination.path]) {
+            return destination;
+        }
+    }
+
+    if (error) {
+        *error = ko_import_error(10, @"Could not choose a private destination name");
+    }
+    return nil;
+}
+
+static BOOL ko_validate_source(NSURL *url, NSString **filename,
+                               NSString **extension, NSError **error) {
+    if (!url.isFileURL) {
+        if (error) *error = ko_import_error(20, @"The selected item is not a file");
+        return NO;
+    }
+
+    NSArray<NSURLResourceKey> *keys = @[
+        NSURLNameKey,
+        NSURLIsRegularFileKey,
+        NSURLIsDirectoryKey,
+        NSURLIsSymbolicLinkKey,
+        NSURLFileSizeKey,
+    ];
+    NSError *resourceError = nil;
+    NSDictionary<NSURLResourceKey, id> *values =
+        [url resourceValuesForKeys:keys error:&resourceError];
+    if (!values) {
+        if (error) *error = ko_import_error(21, @"The selected file is unavailable");
+        return NO;
+    }
+    if ([values[NSURLIsDirectoryKey] boolValue]
+            || [values[NSURLIsSymbolicLinkKey] boolValue]
+            || ![values[NSURLIsRegularFileKey] boolValue]) {
+        if (error) *error = ko_import_error(22, @"Only regular document files can be imported");
+        return NO;
+    }
+    unsigned long long size = [values[NSURLFileSizeKey] unsignedLongLongValue];
+    if (size > KO_IMPORT_MAX_BYTES) {
+        if (error) *error = ko_import_error(23, @"The selected document is too large");
+        return NO;
+    }
+
+    NSString *sourceName = values[NSURLNameKey] ?: url.lastPathComponent;
+    NSString *allowedExtension = ko_allowed_extension(sourceName);
+    if (!allowedExtension) {
+        if (error) *error = ko_import_error(24, @"This document type is not allowed");
+        return NO;
+    }
+
+    *filename = sourceName;
+    *extension = allowedExtension;
+    return YES;
+}
+
+static NSString *ko_copy_document_to_books(NSURL *sourceURL, NSError **error) {
+    const char *booksHome = getenv("KO_BOOKS_HOME");
+    if (!booksHome || booksHome[0] == '\0') {
+        if (error) *error = ko_import_error(30, @"Private Books storage is unavailable");
+        return nil;
+    }
+
+    NSURL *booksURL = [NSURL fileURLWithFileSystemRepresentation:booksHome
+                                                    isDirectory:YES
+                                                  relativeToURL:nil];
+    NSFileManager *fileManager = NSFileManager.defaultManager;
+    __block NSString *resultPath = nil;
+    __block NSError *operationError = nil;
+    NSFileCoordinator *coordinator = [[NSFileCoordinator alloc]
+        initWithFilePresenter:nil];
+    NSError *coordinationError = nil;
+
+    [coordinator coordinateReadingItemAtURL:sourceURL
+                                    options:NSFileCoordinatorReadingWithoutChanges
+                                      error:&coordinationError
+                                 byAccessor:^(NSURL *coordinatedURL) {
+        NSString *sourceName = nil;
+        NSString *extension = nil;
+        if (!ko_validate_source(coordinatedURL, &sourceName, &extension,
+                                &operationError)) {
+            return;
+        }
+
+        NSString *stem = ko_safe_stem(sourceName, extension);
+        NSURL *temporaryURL = [booksURL URLByAppendingPathComponent:
+            [NSString stringWithFormat:@".ko-import-%@.tmp",
+                                       NSUUID.UUID.UUIDString]
+                                                    isDirectory:NO];
+        @try {
+            if (![fileManager copyItemAtURL:coordinatedURL
+                                      toURL:temporaryURL
+                                      error:&operationError]) {
+                operationError = ko_import_error(31, @"The selected document could not be copied");
+                return;
+            }
+
+            struct stat info;
+            if (lstat(temporaryURL.fileSystemRepresentation, &info) != 0
+                    || !S_ISREG(info.st_mode) || S_ISLNK(info.st_mode)) {
+                operationError = ko_import_error(32, @"The copied item is not a regular file");
+                return;
+            }
+            if ((unsigned long long)info.st_size > KO_IMPORT_MAX_BYTES) {
+                operationError = ko_import_error(33, @"The copied document is too large");
+                return;
+            }
+
+            NSDictionary<NSFileAttributeKey, id> *attributes = @{
+                NSFileProtectionKey: NSFileProtectionCompleteUntilFirstUserAuthentication,
+            };
+            if (![fileManager setAttributes:attributes
+                               ofItemAtPath:temporaryURL.path
+                                      error:&operationError]) {
+                operationError = ko_import_error(34, @"The copied document could not be protected");
+                return;
+            }
+
+            NSURL *destination = ko_available_destination(booksURL, stem,
+                                                          extension,
+                                                          &operationError);
+            if (!destination) return;
+            if (![fileManager moveItemAtURL:temporaryURL
+                                      toURL:destination
+                                      error:&operationError]) {
+                operationError = ko_import_error(35, @"The copied document could not be finalized");
+                return;
+            }
+            resultPath = destination.path;
+        } @finally {
+            if ([fileManager fileExistsAtPath:temporaryURL.path]) {
+                [fileManager removeItemAtURL:temporaryURL error:nil];
+            }
+        }
+    }];
+
+    if (!resultPath && !operationError && coordinationError) {
+        operationError = ko_import_error(36, @"The selected document could not be coordinated");
+    }
+    if (!resultPath && !operationError) {
+        operationError = ko_import_error(37, @"The selected document could not be imported");
+    }
+    if (error) *error = operationError;
+    return resultPath;
+}
+
+static UIWindow *ko_ios_key_window(void) {
+    NSCAssert(NSThread.isMainThread, @"UIKit must be queried on the main thread");
+    UIWindow *window = nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        if (scene.activationState != UISceneActivationStateForegroundActive
+                && scene.activationState != UISceneActivationStateForegroundInactive) {
+            continue;
+        }
+        for (UIWindow *candidate in ((UIWindowScene *)scene).windows) {
+            if (candidate.isKeyWindow) {
+                window = candidate;
+                break;
+            }
+        }
+        if (!window) window = ((UIWindowScene *)scene).windows.firstObject;
+        if (window) break;
+    }
+    return window;
+}
+
+static UIViewController *ko_ios_top_view_controller(void) {
+    UIWindow *window = ko_ios_key_window();
+    if (!window) return nil;
+    UIViewController *controller = window.rootViewController;
+    while (controller) {
+        if (controller.presentedViewController
+                && !controller.presentedViewController.isBeingDismissed) {
+            controller = controller.presentedViewController;
+        } else if ([controller isKindOfClass:UINavigationController.class]) {
+            controller = ((UINavigationController *)controller).visibleViewController;
+        } else if ([controller isKindOfClass:UITabBarController.class]) {
+            controller = ((UITabBarController *)controller).selectedViewController;
+        } else {
+            break;
+        }
+    }
+    return controller;
+}
+
+@interface KOIOSImportDelegate : NSObject
+    <UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate>
+@property(nonatomic) BOOL selectionHandled;
 @end
 
-@implementation KOIOSPickerDelegate
+@implementation KOIOSImportDelegate
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller
     didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    if (urls.count == 0) {
-        g_picked_error = @"no urls returned";
-        g_pick_state = KO_PICK_DONE_ERROR;
-        return;
-    }
-    NSURL *url = urls.firstObject;
-
-    /* Activate security scope. We deliberately don't release it here
-     * — the scope must stay active for KOReader to keep reading the
-     * folder during this app session. The plugin re-activates on
-     * subsequent launches via ko_ios_resolve_bookmark. */
-    BOOL accessed = [url startAccessingSecurityScopedResource];
-    if (!accessed) {
-        g_picked_error = @"startAccessingSecurityScopedResource failed";
-        g_pick_state = KO_PICK_DONE_ERROR;
+    (void)controller;
+    self.selectionHandled = YES;
+    if (urls.count != 1) {
+        ko_finish_import(KO_IMPORT_DONE_ERROR, nil,
+                         @"The picker did not return one document");
         return;
     }
 
-    NSError *err = nil;
-    NSData *bookmark = [url bookmarkDataWithOptions:0
-                     includingResourceValuesForKeys:nil
-                                      relativeToURL:nil
-                                              error:&err];
-    if (!bookmark) {
-        g_picked_error = [NSString stringWithFormat:@"bookmark failed: %@", err];
-        g_pick_state = KO_PICK_DONE_ERROR;
-        return;
-    }
-
-    g_picked_path = [[NSString alloc] initWithUTF8String:url.fileSystemRepresentation];
-    g_picked_bookmark_b64 = [bookmark base64EncodedStringWithOptions:0];
-    g_picked_error = nil;
-    g_pick_state = KO_PICK_DONE_OK;
+    NSURL *sourceURL = urls.firstObject;
+    dispatch_async(ko_import_io_queue(), ^{
+        @autoreleasepool {
+            BOOL hasSecurityScope = [sourceURL startAccessingSecurityScopedResource];
+            NSError *error = nil;
+            NSString *path = nil;
+            @try {
+                path = ko_copy_document_to_books(sourceURL, &error);
+            } @finally {
+                if (hasSecurityScope) {
+                    [sourceURL stopAccessingSecurityScopedResource];
+                }
+            }
+            if (path) {
+                ko_finish_import(KO_IMPORT_DONE_OK, path, nil);
+            } else {
+                ko_finish_import(KO_IMPORT_DONE_ERROR, nil,
+                                 error.localizedDescription ?: @"Import failed");
+            }
+        }
+    });
 }
 
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
-    g_picked_path = nil;
-    g_picked_bookmark_b64 = nil;
-    g_picked_error = nil;
-    g_pick_state = KO_PICK_DONE_CANCEL;
+    (void)controller;
+    self.selectionHandled = YES;
+    ko_finish_import(KO_IMPORT_DONE_CANCEL, nil, nil);
+}
+
+- (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController {
+    (void)presentationController;
+    if (!self.selectionHandled) {
+        ko_finish_import(KO_IMPORT_DONE_CANCEL, nil, nil);
+    }
 }
 
 @end
 
-/* The delegate has to outlive the picker (UIKit holds it weakly), so
- * we keep one global instance pinned. */
-static KOIOSPickerDelegate *g_delegate = nil;
 
-static UIViewController *ko_ios_top_view_controller(void) {
-    UIWindow *win = nil;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        if (scene.activationState != UISceneActivationStateForegroundActive
-            && scene.activationState != UISceneActivationStateForegroundInactive) {
-            continue;
-        }
-        for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-            if (w.isKeyWindow) { win = w; break; }
-        }
-        if (!win && ((UIWindowScene *)scene).windows.count > 0) {
-            win = ((UIWindowScene *)scene).windows.firstObject;
-        }
-        if (win) break;
-    }
-    if (!win) {
-        /* Fallback for pre-scene apps (we shouldn't hit this on iOS
-         * 13+, but SDL3 might still be using a non-scene path). */
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        win = UIApplication.sharedApplication.keyWindow;
-#pragma clang diagnostic pop
-    }
-    if (!win) return nil;
-    UIViewController *vc = win.rootViewController;
-    while (vc.presentedViewController) vc = vc.presentedViewController;
-    return vc;
-}
+static KOIOSImportDelegate *g_import_delegate = nil;
 
-bool ko_ios_pick_folder_start(void) {
-    if (g_pick_state == KO_PICK_PENDING) return false;
-    g_pick_state = KO_PICK_PENDING;
-    g_picked_path = nil;
-    g_picked_bookmark_b64 = nil;
-    g_picked_error = nil;
+KO_IOS_EXPORT bool ko_ios_import_document_start(void) {
+    NSLock *lock = ko_import_state_lock();
+    [lock lock];
+    if (g_import_state != KO_IMPORT_IDLE) {
+        [lock unlock];
+        return false;
+    }
+    g_import_state = KO_IMPORT_PENDING;
+    g_imported_path = nil;
+    g_import_error = nil;
+    [lock unlock];
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *top = ko_ios_top_view_controller();
-        if (!top) {
-            g_picked_error = @"no top view controller";
-            g_pick_state = KO_PICK_DONE_ERROR;
-            return;
-        }
-        if (!g_delegate) g_delegate = [[KOIOSPickerDelegate alloc] init];
+        @autoreleasepool {
+            UIViewController *top = ko_ios_top_view_controller();
+            if (!top) {
+                ko_finish_import(KO_IMPORT_DONE_ERROR, nil,
+                                 @"No active view controller is available");
+                return;
+            }
+            if (!g_import_delegate) {
+                g_import_delegate = [[KOIOSImportDelegate alloc] init];
+            }
+            g_import_delegate.selectionHandled = NO;
 
-        UIDocumentPickerViewController *picker;
-        if (@available(iOS 14.0, *)) {
-            picker = [[UIDocumentPickerViewController alloc]
-                initForOpeningContentTypes:@[UTTypeFolder] asCopy:NO];
-        } else {
-            g_picked_error = @"requires iOS 14";
-            g_pick_state = KO_PICK_DONE_ERROR;
-            return;
+            UIDocumentPickerViewController *picker =
+                [[UIDocumentPickerViewController alloc]
+                    initForOpeningContentTypes:@[UTTypeData]
+                                       asCopy:YES];
+            picker.delegate = g_import_delegate;
+            picker.presentationController.delegate = g_import_delegate;
+            picker.allowsMultipleSelection = NO;
+            picker.modalPresentationStyle = UIModalPresentationFullScreen;
+            [top presentViewController:picker animated:YES completion:nil];
         }
-        picker.delegate = g_delegate;
-        picker.allowsMultipleSelection = NO;
-        [top presentViewController:picker animated:YES completion:nil];
     });
     return true;
 }
 
-/* Lua poll. Returns the current state. When state is DONE_OK, fills
- * out_path and out_bookmark_b64. After this call returns DONE_*, the
- * state is reset to IDLE so the next call returns IDLE until another
- * pick is started. */
-ko_pick_state_t ko_ios_pick_folder_poll(char *out_path, size_t path_cap,
-                                        char *out_bookmark_b64, size_t bookmark_cap,
-                                        char *out_error, size_t error_cap) {
-    ko_pick_state_t state = g_pick_state;
-    if (state < KO_PICK_DONE_OK) return state;
+static BOOL ko_copy_c_string(NSString *value, char *output, size_t capacity) {
+    if (!output || capacity == 0) return NO;
+    const char *utf8 = value.UTF8String ?: "";
+    size_t length = strlen(utf8);
+    if (length >= capacity) {
+        output[0] = '\0';
+        return NO;
+    }
+    memcpy(output, utf8, length + 1);
+    return YES;
+}
 
-    if (state == KO_PICK_DONE_OK) {
-        if (out_path && path_cap > 0) {
-            const char *p = g_picked_path.UTF8String ?: "";
-            strncpy(out_path, p, path_cap - 1);
-            out_path[path_cap - 1] = '\0';
-        }
-        if (out_bookmark_b64 && bookmark_cap > 0) {
-            const char *b = g_picked_bookmark_b64.UTF8String ?: "";
-            strncpy(out_bookmark_b64, b, bookmark_cap - 1);
-            out_bookmark_b64[bookmark_cap - 1] = '\0';
-        }
-    } else if (state == KO_PICK_DONE_ERROR) {
-        if (out_error && error_cap > 0) {
-            const char *e = g_picked_error.UTF8String ?: "unknown";
-            strncpy(out_error, e, error_cap - 1);
-            out_error[error_cap - 1] = '\0';
-        }
+KO_IOS_EXPORT ko_import_state_t
+ko_ios_import_document_poll(char *outPath, size_t pathCapacity,
+                            char *outError, size_t errorCapacity) {
+    if (outPath && pathCapacity > 0) outPath[0] = '\0';
+    if (outError && errorCapacity > 0) outError[0] = '\0';
+
+    NSLock *lock = ko_import_state_lock();
+    [lock lock];
+    ko_import_state_t state = g_import_state;
+    if (state < KO_IMPORT_DONE_OK) {
+        [lock unlock];
+        return state;
     }
 
-    g_pick_state = KO_PICK_IDLE;
-    g_picked_path = nil;
-    g_picked_bookmark_b64 = nil;
-    g_picked_error = nil;
+    if (state == KO_IMPORT_DONE_OK
+            && !ko_copy_c_string(g_imported_path, outPath, pathCapacity)) {
+        state = KO_IMPORT_DONE_ERROR;
+        ko_copy_c_string(@"Private destination path is too long",
+                         outError, errorCapacity);
+    } else if (state == KO_IMPORT_DONE_ERROR) {
+        ko_copy_c_string(g_import_error ?: @"Import failed",
+                         outError, errorCapacity);
+    }
+
+    g_import_state = KO_IMPORT_IDLE;
+    g_imported_path = nil;
+    g_import_error = nil;
+    [lock unlock];
     return state;
 }
 
-/* Read iOS' safeAreaInsets directly off the key window, in physical
- * pixels (UIKit reports points; KOReader's framebuffer is in pixels).
- * Called from framebuffer_SDL3.lua to letterbox the UI inside the
- * notch/home-indicator bezel. We read straight from UIKit rather than
- * via SDL_GetWindowSafeArea because SDL only observes safeAreaInsets
- * via the safeAreaInsetsDidChange callback, which may not have fired
- * yet by the time we want to size the framebuffer. */
-void ko_ios_get_safe_area_pixels(int *out_top, int *out_right,
-                                 int *out_bottom, int *out_left) {
-    if (out_top) *out_top = 0;
-    if (out_right) *out_right = 0;
-    if (out_bottom) *out_bottom = 0;
-    if (out_left) *out_left = 0;
+/* Read safe-area values entirely on the UIKit main thread, then expose only
+ * primitive pixel values to the caller. */
+KO_IOS_EXPORT void ko_ios_get_safe_area_pixels(int *outTop, int *outRight,
+                                               int *outBottom, int *outLeft) {
+    if (outTop) *outTop = 0;
+    if (outRight) *outRight = 0;
+    if (outBottom) *outBottom = 0;
+    if (outLeft) *outLeft = 0;
 
-    __block UIWindow *win = nil;
-    void (^lookup)(void) = ^{
-        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-            for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-                if (w.isKeyWindow) { win = w; break; }
-            }
-            if (!win && ((UIWindowScene *)scene).windows.count > 0) {
-                win = ((UIWindowScene *)scene).windows.firstObject;
-            }
-            if (win) break;
-        }
+    __block CGFloat top = 0;
+    __block CGFloat right = 0;
+    __block CGFloat bottom = 0;
+    __block CGFloat left = 0;
+    __block CGFloat scale = 1;
+    void (^readSafeArea)(void) = ^{
+        UIWindow *window = ko_ios_key_window();
+        if (!window) return;
+        [window layoutIfNeeded];
+        UIEdgeInsets insets = window.safeAreaInsets;
+        top = insets.top;
+        right = insets.right;
+        bottom = insets.bottom;
+        left = insets.left;
+        scale = window.screen.nativeScale;
     };
-    if ([NSThread isMainThread]) {
-        lookup();
+
+    if (NSThread.isMainThread) {
+        readSafeArea();
     } else {
-        dispatch_sync(dispatch_get_main_queue(), lookup);
-    }
-    if (!win) return;
-
-    /* Force a layout pass so safeAreaInsets is populated. Early in
-     * launch the window may not have been laid out yet. */
-    if ([NSThread isMainThread]) {
-        [win layoutIfNeeded];
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), ^{ [win layoutIfNeeded]; });
+        dispatch_sync(dispatch_get_main_queue(), readSafeArea);
     }
 
-    UIEdgeInsets insets = win.safeAreaInsets;
-    CGFloat scale = win.screen ? win.screen.nativeScale
-                               : UIScreen.mainScreen.nativeScale;
-    if (out_top) *out_top = (int)ceilf(insets.top * scale);
-    if (out_right) *out_right = (int)ceilf(insets.right * scale);
-    if (out_bottom) *out_bottom = (int)ceilf(insets.bottom * scale);
-    if (out_left) *out_left = (int)ceilf(insets.left * scale);
-}
-
-/* Resolve a stored bookmark, activate security scope, return path.
- * Called once per saved cloud folder at app launch. The returned path
- * may differ from the path saved at pick time — providers can rename
- * containers across launches. The activated scope is intentionally
- * not released; it stays alive for the app session. */
-bool ko_ios_resolve_bookmark(const char *bookmark_b64,
-                             char *out_path, size_t path_cap,
-                             char *out_error, size_t error_cap) {
-    if (!bookmark_b64 || !out_path || path_cap == 0) return false;
-
-    NSString *b64 = [NSString stringWithUTF8String:bookmark_b64];
-    NSData *data = [[NSData alloc] initWithBase64EncodedString:b64 options:0];
-    if (!data) {
-        if (out_error && error_cap) strncpy(out_error, "invalid base64", error_cap - 1);
-        return false;
-    }
-
-    BOOL stale = NO;
-    NSError *err = nil;
-    NSURL *url = [NSURL URLByResolvingBookmarkData:data
-                                           options:0
-                                     relativeToURL:nil
-                               bookmarkDataIsStale:&stale
-                                             error:&err];
-    if (!url) {
-        if (out_error && error_cap) {
-            const char *m = err.localizedDescription.UTF8String ?: "resolve failed";
-            strncpy(out_error, m, error_cap - 1);
-            out_error[error_cap - 1] = '\0';
-        }
-        return false;
-    }
-
-    if (![url startAccessingSecurityScopedResource]) {
-        if (out_error && error_cap) {
-            strncpy(out_error, "startAccessingSecurityScopedResource failed", error_cap - 1);
-            out_error[error_cap - 1] = '\0';
-        }
-        return false;
-    }
-
-    const char *p = url.fileSystemRepresentation;
-    strncpy(out_path, p, path_cap - 1);
-    out_path[path_cap - 1] = '\0';
-    return true;
+    if (outTop) *outTop = (int)ceil(top * scale);
+    if (outRight) *outRight = (int)ceil(right * scale);
+    if (outBottom) *outBottom = (int)ceil(bottom * scale);
+    if (outLeft) *outLeft = (int)ceil(left * scale);
 }

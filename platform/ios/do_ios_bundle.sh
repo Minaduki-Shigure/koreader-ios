@@ -71,6 +71,9 @@ xcrun --sdk "${IOS_PLATFORM}" clang \
     -framework UIKit \
     -framework CoreFoundation \
     -framework UniformTypeIdentifiers \
+    -Wl,-exported_symbol,_ko_ios_import_document_start \
+    -Wl,-exported_symbol,_ko_ios_import_document_poll \
+    -Wl,-exported_symbol,_ko_ios_get_safe_area_pixels \
     -Wl,-rpath,@executable_path/app/libs \
     -o "${APP_BUNDLE}/KOReader" \
     "${PLATFORM_DIR}/ios_loader.m" \

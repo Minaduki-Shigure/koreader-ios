@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "lua.h"
@@ -27,6 +28,77 @@
 #define LOGNAME "iOS loader"
 #define LANGUAGE "en_US.UTF-8"
 #define LUA_ERROR "failed to run lua chunk: %s\n"
+
+static BOOL create_private_directory(NSFileManager *fileManager, NSURL *url,
+                                     BOOL excludeFromBackup, NSError **error) {
+    NSDictionary<NSFileAttributeKey, id> *attributes = @{
+        NSFileProtectionKey: NSFileProtectionCompleteUntilFirstUserAuthentication,
+    };
+    if (![fileManager createDirectoryAtURL:url
+               withIntermediateDirectories:YES
+                                attributes:attributes
+                                     error:error]) {
+        return NO;
+    }
+    struct stat info;
+    if (lstat(url.fileSystemRepresentation, &info) != 0
+            || !S_ISDIR(info.st_mode) || S_ISLNK(info.st_mode)) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"rocks.koreader.ios.storage"
+                                         code:2
+                                     userInfo:@{NSLocalizedDescriptionKey:
+                                                    @"Private storage is not a regular directory"}];
+        }
+        return NO;
+    }
+    if (![fileManager setAttributes:attributes
+                       ofItemAtPath:url.path
+                              error:error]) {
+        return NO;
+    }
+    if (excludeFromBackup) {
+        NSNumber *excluded = @YES;
+        if (![url setResourceValue:excluded
+                            forKey:NSURLIsExcludedFromBackupKey
+                             error:error]) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
+static BOOL configure_private_storage(NSString **dataPath, NSString **booksPath,
+                                      NSError **error) {
+    NSFileManager *fileManager = NSFileManager.defaultManager;
+    NSURL *applicationSupport = [fileManager URLsForDirectory:NSApplicationSupportDirectory
+                                                    inDomains:NSUserDomainMask].firstObject;
+    if (!applicationSupport) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"rocks.koreader.ios.storage"
+                                         code:1
+                                     userInfo:@{NSLocalizedDescriptionKey:
+                                                    @"Application Support is unavailable"}];
+        }
+        return NO;
+    }
+
+    NSURL *root = [applicationSupport URLByAppendingPathComponent:@"KOReader"
+                                                       isDirectory:YES];
+    NSURL *data = [root URLByAppendingPathComponent:@"Data" isDirectory:YES];
+    NSURL *books = [root URLByAppendingPathComponent:@"Books" isDirectory:YES];
+    NSURL *cache = [data URLByAppendingPathComponent:@"cache" isDirectory:YES];
+
+    if (!create_private_directory(fileManager, root, NO, error)
+            || !create_private_directory(fileManager, data, NO, error)
+            || !create_private_directory(fileManager, books, NO, error)
+            || !create_private_directory(fileManager, cache, YES, error)) {
+        return NO;
+    }
+
+    *dataPath = data.path;
+    *booksPath = books.path;
+    return YES;
+}
 
 static void set_lua_args(lua_State *L, int argc, char *argv[]) {
     lua_createtable(L, argc > 1 ? argc - 1 : 0, 0);
@@ -80,11 +152,24 @@ int main(int argc, char *argv[]) {
          * KOReader still self-identifies as the SDL emulator otherwise. */
         setenv("KO_IOS", "1", 1);
 
-        /* iOS sandbox: use the per-app Documents dir for user data. */
-        NSArray<NSString *> *docs = NSSearchPathForDirectoriesInDomains(
-            NSDocumentDirectory, NSUserDomainMask, YES);
-        if (docs.count > 0) {
-            setenv("KO_HOME", [docs[0] fileSystemRepresentation], 1);
+        /* Keep executable settings and imported documents in private,
+         * protected Application Support directories. Imported documents
+         * enter Books only through the copy-in bridge; KOReader never
+         * receives a document-provider or Inbox path. */
+        NSString *dataPath = nil;
+        NSString *booksPath = nil;
+        NSError *storageError = nil;
+        if (!configure_private_storage(&dataPath, &booksPath, &storageError)) {
+            fprintf(stderr, "[%s]: private storage setup failed: %s\n", LOGNAME,
+                    storageError.localizedDescription.UTF8String ?: "unknown error");
+            return EXIT_FAILURE;
+        }
+        if (setenv("KO_HOME", dataPath.fileSystemRepresentation, 1) != 0
+                || setenv("KO_BOOKS_HOME", booksPath.fileSystemRepresentation, 1) != 0
+                || setenv("KO_IOS_STRICT_OFFLINE", "1", 1) != 0) {
+            fprintf(stderr, "[%s]: failed to configure private storage environment\n",
+                    LOGNAME);
+            return EXIT_FAILURE;
         }
 
         lua_State *L = luaL_newstate();
@@ -106,6 +191,8 @@ int main(int argc, char *argv[]) {
         lua_close(L);
         unsetenv("LC_ALL");
         unsetenv("KO_HOME");
+        unsetenv("KO_BOOKS_HOME");
+        unsetenv("KO_IOS_STRICT_OFFLINE");
         unsetenv("SDL_FULLSCREEN");
         unsetenv("SDL_TOUCH_MOUSE_EVENTS");
         unsetenv("KO_IOS");
