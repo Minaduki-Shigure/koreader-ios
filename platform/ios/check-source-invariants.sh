@@ -38,6 +38,7 @@ FILE_MANAGER_BOOKINFO="${REPO_ROOT}/frontend/apps/filemanager/filemanagerbookinf
 FILE_MANAGER_SEARCHER="${REPO_ROOT}/frontend/apps/filemanager/filemanagerfilesearcher.lua"
 BOOKMARK_BROWSER="${REPO_ROOT}/frontend/ui/widget/bookmarkbrowser.lua"
 BOOK_METADATA_ARCHIVE="${REPO_ROOT}/frontend/ui/widget/bookmetadataarchive.lua"
+SAFE_SETTINGS="${REPO_ROOT}/frontend/safesettings.lua"
 ALLOWLIST="${PLATFORM_DIR}/plugin-allowlist.txt"
 
 require_source() {
@@ -286,6 +287,8 @@ reject_file_source "${REPO_ROOT}/frontend/ui/quickstart.lua" 'registerInternalDo
 
 require_file_source "${DOC_SETTINGS}" 'if hardened_offline then return { "hash" } end' "DocSettings"
 require_file_source "${DOC_SETTINGS}" 'return SafeSettings.loadTable(path)' "DocSettings"
+require_file_source "${SAFE_SETTINGS}" 'pcall(jit_control.off, chunk, true)' "safe settings JIT guard"
+require_file_source "${SAFE_SETTINGS}" 'debug.sethook(instructionHook, "", HOOK_INTERVAL)' "safe settings instruction guard"
 require_file_source "${DOC_SETTINGS}" 'local candidates_list = hardened_offline and {' "DocSettings"
 require_file_source "${DOC_SETTINGS}" 'if file_path ~= ""' "DocSettings candidates"
 require_file_source "${DOC_SETTINGS}" 'and (not hardened_offline or isPrivateMetadataPath(file_path))' "DocSettings candidates"

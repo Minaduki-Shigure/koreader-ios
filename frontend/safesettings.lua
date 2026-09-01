@@ -34,6 +34,14 @@ local function checkFile(path, options)
 end
 
 local function runChunk(chunk, options)
+    local jit_control = rawget(_G, "jit")
+    if jit_control and type(jit_control.off) == "function" then
+        local disabled = pcall(jit_control.off, chunk, true)
+        if not disabled then
+            return false, "failed to disable JIT for settings data"
+        end
+    end
+
     local max_instructions = option(options, "max_instructions", DEFAULT_MAX_INSTRUCTIONS)
     local instructions = 0
     local old_hook, old_mask, old_count = debug.gethook()

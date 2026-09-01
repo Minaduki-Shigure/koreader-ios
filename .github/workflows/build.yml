@@ -206,6 +206,7 @@ jobs:
           key: ${{ steps.build-restore.outputs.cache-primary-key }}
 
       - name: Test hardened settings loader
+        timeout-minutes: 15
         run: |
           mkdir -p artifacts/logs
           set -o pipefail
@@ -215,6 +216,7 @@ jobs:
             2>&1 | tee artifacts/logs/safesettings.log
 
       - name: Test hardened iOS data boundaries
+        timeout-minutes: 20
         run: |
           mkdir -p artifacts/logs
           set -o pipefail

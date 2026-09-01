@@ -120,6 +120,7 @@ jobs:
             tee artifacts/logs/macho-closure-tests.log
 
       - name: Run release-gating frontend tests
+        timeout-minutes: 90
         run: |
           set -o pipefail
           targeted_runner="${PWD}/platform/ios/run-targeted-front-tests.sh"
