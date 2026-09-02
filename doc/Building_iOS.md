@@ -337,9 +337,10 @@ upstream KOReader tag.
   bounded selections of supported files or complete folders into private Books
   storage. The port does not retain security-scoped access to files or folders
   owned by other providers.
-- **TXT pinch resizing is currently unsafe on iOS.** A two-finger font-size
-  gesture can still hang the app. Use KOReader's font-size controls instead
-  until the native touch path is fixed and verified on a physical device.
+- **TXT pinch resizing is disabled on iOS.** The SDL input bridge cancels and
+  drains a complete multitouch sequence before KOReader can dispatch a TXT
+  font-size gesture. Use KOReader's font-size controls instead. Multitouch in
+  other document types remains available.
 - **Simulator builds are untested.** The `IOS_PLATFORM=iphonesimulator`
   parameter exists in `make/ios.mk` but `base/` would need to be
   rebuilt against the simulator SDK — we haven't wired up an XCFramework.

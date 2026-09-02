@@ -46,6 +46,15 @@ function PicDocument:getDocumentProps()
     return {}
 end
 
+function PicDocument:drawPage(target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
+    if os.getenv("KO_IOS") == "1" and target:getInverse() == 1 then
+        Document.drawPage(self, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
+        target:invertRect(x, y, rect.w, rect.h)
+        return
+    end
+    return Document.drawPage(self, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
+end
+
 function PicDocument:getCoverPageImage()
     local first_page = self._document:openPage(1)
     if first_page.image_bb then

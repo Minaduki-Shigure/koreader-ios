@@ -535,6 +535,7 @@ function ReaderUI:init()
 
     BookList.setBookInfoCache(file, self.doc_settings)
 
+    Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)
     Device:setIgnoreInput(false) -- Allow processing of events (on Android).
     Input:inhibitInputUntil(0.2)
 
@@ -719,7 +720,7 @@ function ReaderUI:extendProvider(file, provider, is_provider_forced)
         end
     end
     provider.is_fb2 = file_type:sub(1, 2) == "fb"
-    provider.is_txt = file_type == "txt"
+    provider.is_txt = file_type == "txt" or file_type == "txt.zip"
     return provider
 end
 
@@ -741,6 +742,7 @@ function ReaderUI:showReaderCoroutine(file, provider, seamless)
             io.stderr:write('[!] doShowReader coroutine crashed:\n')
             io.stderr:write(debug.traceback(co, err, 1))
             -- Restore input if we crashed before ReaderUI has restored it
+            Input:setMultitouchSuppressed(false)
             Device:setIgnoreInput(false)
             Input:inhibitInputUntil(0.2)
             UIManager:show(InfoMessage:new{
@@ -872,6 +874,7 @@ function ReaderUI:onFlushSettings(show_notification)
 end
 
 function ReaderUI:closeDocument()
+    Input:setMultitouchSuppressed(false)
     self.document:close()
     self.document = nil
 end

@@ -39,7 +39,7 @@ jobs:
       IOS_PLATFORM: iphoneos
       PARALLEL_JOBS: "4"
       AUDITED_PARENT_BASE: 9192014d8bd82a91dc1012473be0f238dedfdb54
-      PINNED_BASE_COMMIT: f792885d1b361ff23c5fffc97e7f618202d41c3a
+      PINNED_BASE_COMMIT: 0f30e13bf0c9577e79009ca2c7b759a364a68f25
       DERIVED_DATA: build/DerivedData
 
     steps:
@@ -185,7 +185,10 @@ jobs:
           for spec in \
             spec/front/unit/safesettings_spec.lua \
             spec/front/unit/readerfont_spec.lua \
-            spec/front/unit/ios_system_appearance_spec.lua; do
+            spec/front/unit/ios_system_appearance_spec.lua \
+            spec/front/unit/sdl3_touch_state_spec.lua \
+            spec/front/unit/sdl_touch_cancel_spec.lua \
+            spec/front/unit/picdocument_nightmode_spec.lua; do
             "${host_make[@]}" testfront RUNTESTS="${targeted_runner}" T="${spec}" \
               2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
           done
@@ -194,6 +197,7 @@ jobs:
             spec/front/unit/docsettings_hardened_ios_spec.lua \
             spec/front/unit/filemanagerutil_ios_spec.lua \
             spec/front/unit/iosimporter_spec.lua \
+            spec/front/unit/koptinterface_nightmode_spec.lua \
             spec/front/unit/writable_lua_hardened_ios_spec.lua; do
             "${host_make[@]}" testfront RUNTESTS="${hardened_runner}" T="${spec}" \
               2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
@@ -211,9 +215,13 @@ jobs:
             artifacts/logs/safesettings.log
             artifacts/logs/readerfont.log
             artifacts/logs/ios_system_appearance.log
+            artifacts/logs/sdl3_touch_state.log
+            artifacts/logs/sdl_touch_cancel.log
+            artifacts/logs/picdocument_nightmode.log
             artifacts/logs/docsettings_hardened_ios.log
             artifacts/logs/filemanagerutil_ios.log
             artifacts/logs/iosimporter.log
+            artifacts/logs/koptinterface_nightmode.log
             artifacts/logs/writable_lua_hardened_ios.log
             artifacts/logs/testfront.log
           )

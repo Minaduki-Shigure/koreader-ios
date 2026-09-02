@@ -123,6 +123,14 @@ local Device = Generic:extend{
     window = G_reader_settings:readSetting("sdl_window", {}),
 }
 
+function Device:_handleSDLFingerCanceled(device_input)
+    if UIManager then
+        UIManager:broadcastEvent(Event:new("HandledAsSwipe"))
+        UIManager.currently_scrolling = false
+    end
+    device_input:resetState()
+end
+
 local AppImage = Device:extend{
     model = "AppImage",
     hasOTAUpdates = yes,
@@ -470,6 +478,8 @@ function Device:init()
                 UIManager:broadcastEvent(Event:new("GamepadButtonUp", ev.value))
             elseif ev.code == SDL.SDL.SDL_EVENT_TEXT_INPUT then
                 UIManager:sendEvent(Event:new("TextInput", tostring(ev.value)))
+            elseif ev.code == SDL.SDL.SDL_EVENT_FINGER_CANCELED then
+                self:_handleSDLFingerCanceled(device_input)
             elseif os.getenv("KO_IOS") == "1"
                     and ev.code == SDL.SDL.SDL_EVENT_DID_ENTER_FOREGROUND then
                 -- SDL may recreate or invalidate its renderer state while an

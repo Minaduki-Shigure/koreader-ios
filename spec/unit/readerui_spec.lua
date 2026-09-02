@@ -43,6 +43,11 @@ describe("Readerui module", function()
         assert(readerui.document == nil)
         readerui:onClose()
     end)
+    it("should identify plain-text archives for iOS touch policy", function()
+        assert.is_true(ReaderUI:extendProvider("sample.txt", {}, true).is_txt)
+        assert.is_true(ReaderUI:extendProvider("sample.txt.zip", {}, true).is_txt)
+        assert.is_false(ReaderUI:extendProvider("sample.epub", {}, true).is_txt)
+    end)
     it("should not reset ReaderUI.instance by mistake", function()
         ReaderUI:doShowReader(sample_epub) -- spins up a new, sane instance
         local new_readerui = ReaderUI.instance

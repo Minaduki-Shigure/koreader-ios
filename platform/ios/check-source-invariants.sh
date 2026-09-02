@@ -16,8 +16,14 @@ IMPORT_PLUGIN="${REPO_ROOT}/plugins/iosimporter.koplugin/main.lua"
 APPEARANCE_PLUGIN="${REPO_ROOT}/plugins/iossystemappearance.koplugin/main.lua"
 PLUGIN_LOADER="${REPO_ROOT}/frontend/pluginloader.lua"
 SDL3="${REPO_ROOT}/base/ffi/SDL3.lua"
+SDL3_CDECL="${REPO_ROOT}/base/ffi-cdecl/SDL3_decl.c"
+SDL3_HEADER="${REPO_ROOT}/base/ffi/SDL3_h.lua"
+SDL3_TOUCH_STATE="${REPO_ROOT}/base/ffi/sdl3_touch_state.lua"
+SDL3_INPUT="${REPO_ROOT}/base/ffi/input_SDL3.lua"
 DEVICE="${REPO_ROOT}/frontend/device/sdl/device.lua"
 READER_UI="${REPO_ROOT}/frontend/apps/reader/readerui.lua"
+PIC_DOCUMENT="${REPO_ROOT}/frontend/document/picdocument.lua"
+KOPT_INTERFACE="${REPO_ROOT}/frontend/document/koptinterface.lua"
 FILE_MANAGER="${REPO_ROOT}/frontend/apps/filemanager/filemanager.lua"
 BOOK_SHORTCUTS="${REPO_ROOT}/plugins/bookshortcuts.koplugin/main.lua"
 COMMON_INFO="${REPO_ROOT}/frontend/ui/elements/common_info_menu_table.lua"
@@ -193,6 +199,39 @@ reject_source "${APPEARANCE}" 'NSTimer'
 require_source "${SDL3}" 'event.type >= SDL.SDL_EVENT_USER'
 require_source "${SDL3}" 'event.type < SDL.SDL_EVENT_LAST'
 require_source "${SDL3}" 'code = tonumber(event.user.code)'
+require_source "${SDL3}" 'SDL.SDL_SetEventEnabled(SDL.SDL_EVENT_PINCH_BEGIN, false)'
+require_source "${SDL3}" 'SDL.SDL_SetEventEnabled(SDL.SDL_EVENT_PINCH_UPDATE, false)'
+require_source "${SDL3}" 'SDL.SDL_SetEventEnabled(SDL.SDL_EVENT_PINCH_END, false)'
+require_source "${SDL3_CDECL}" 'cdecl_func(SDL_SetEventEnabled)'
+require_source "${SDL3_HEADER}" 'void SDL_SetEventEnabled(Uint32, bool);'
+require_source "${SDL3}" 'finger_action = touch_state:onCancel'
+require_source "${SDL3}" 'return true, {}'
+require_source "${SDL3}" 'if touch_state:resetContacts() then'
+require_source "${SDL3_TOUCH_STATE}" 'self:_startDiscarding()'
+require_source "${SDL3_TOUCH_STATE}" 'return "cancel"'
+require_source "${SDL3_TOUCH_STATE}" 'return "consume"'
+require_source "${SDL3_INPUT}" 'setMultitouchSuppressed = SDL.setMultitouchSuppressed'
+require_source "${INPUT}" 'function Input:setMultitouchSuppressed(suppressed)'
+require_source "${DEVICE}" 'UIManager:broadcastEvent(Event:new("HandledAsSwipe"))'
+require_source "${DEVICE}" 'device_input:resetState()'
+require_source "${READER_UI}" 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)'
+require_source "${READER_UI}" 'Input:setMultitouchSuppressed(false)'
+require_source "${READER_UI}" 'file_type == "txt" or file_type == "txt.zip"'
+require_source "${PIC_DOCUMENT}" 'target:invertRect(x, y, rect.w, rect.h)'
+require_source "${KOPT_INTERFACE}" 'function KoptInterface:isIOSStandaloneImage(doc)'
+require_source "${KOPT_INTERFACE}" 'if os.getenv("KO_IOS") ~= "1" then return false end'
+require_source "${KOPT_INTERFACE}" 'local ios_standalone_image = self:isIOSStandaloneImage(doc)'
+require_source "${KOPT_INTERFACE}" 'if ios_standalone_image then'
+
+reader_ready_line="$(grep -nF 'self:handleEvent(Event:new("ReaderReady"' "${READER_UI}" | head -n1 | cut -d: -f1)"
+reader_suppress_line="$(grep -nF 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)' "${READER_UI}" | head -n1 | cut -d: -f1)"
+reader_restore_line="$(grep -nF 'Device:setIgnoreInput(false) -- Allow processing of events (on Android).' "${READER_UI}" | head -n1 | cut -d: -f1)"
+if [ -z "${reader_ready_line}" ] || [ -z "${reader_suppress_line}" ] || [ -z "${reader_restore_line}" ] \
+        || [ "${reader_ready_line}" -ge "${reader_suppress_line}" ] \
+        || [ "${reader_suppress_line}" -ge "${reader_restore_line}" ]; then
+    echo "error: TXT multitouch suppression must only be enabled after ReaderReady and before input is restored" >&2
+    exit 1
+fi
 require_source "${APPEARANCE_PLUGIN}" 'KO_HARDENED_OFFLINE'
 require_source "${APPEARANCE_PLUGIN}" 'ko_ios_system_appearance_start'
 require_source "${APPEARANCE_PLUGIN}" 'controller:syncCurrentAppearance()'

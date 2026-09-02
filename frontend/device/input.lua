@@ -316,6 +316,12 @@ function Input:init()
     self._inhibitInputUntil_func = function() self:inhibitInputUntil() end
 end
 
+function Input:setMultitouchSuppressed(suppressed)
+    if self.input.setMultitouchSuppressed then
+        return self.input.setMultitouchSuppressed(suppressed == true)
+    end
+end
+
 function Input:UIManagerReady(uimgr)
     UIManager = uimgr
 end

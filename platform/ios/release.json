@@ -1,8 +1,8 @@
 {
-  "marketingVersion": "2026.7.4",
-  "buildVersion": "5",
-  "releaseTag": "ios-v2026.7.4-b5",
+  "marketingVersion": "2026.7.5",
+  "buildVersion": "6",
+  "releaseTag": "ios-v2026.7.5-b6",
   "upstreamTag": "v2026.07.1",
   "channel": "beta",
-  "localizedDescription": "KOReader 2026.7.4 严格离线 iOS 回滚测试版：撤销 2026.7.3 对文件选择器和多点触控/缩放处理的改动，恢复 2026.7.2 的导入与手势代码路径。LiveContainer 使用前仍需启用 Fix File Picker。TXT 双指缩放卡死尚未解决，请暂时避免该手势。本版本保留跟随系统外观、私有书库和严格离线限制，用于验证多文件导入回归是否消失。"
+  "localizedDescription": "KOReader 2026.7.5 严格离线 iOS 测试版：保持 2026.7.4 已验证的文件选择器与多文件导入路径不变；在 SDL 输入边界禁用未使用的原生缩放事件，并在 TXT 阅读中于第二个触点出现时取消并排空完整多指序列，避免触点状态或同步全文重排导致界面卡死。TXT 字号仍请使用菜单调整。独立 PNG 及其他图片现在会在夜间模式中进行渲染层预反色，以抵消最终帧缓冲反色并保留原始颜色；该规则也覆盖已经保存旧 sidecar 的图片。LiveContainer 使用前仍需启用 Fix File Picker。"
 }

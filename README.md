@@ -37,8 +37,9 @@
 > does not have the same OS-level container isolation as the standalone
 > SideStore installation; use the standalone installation when that boundary is
 > required.
-> TXT two-finger font resizing remains a known iOS issue and can hang the app;
-> use the font-size controls instead while this native touch bug is investigated.
+> TXT multitouch is deliberately cancelled at the SDL input boundary on iOS;
+> use the font-size controls instead of pinch resizing. Other document types
+> retain their normal multitouch gestures.
 >
 > ```sh
 > make TARGET=ios xcodeproj
