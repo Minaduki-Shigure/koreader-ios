@@ -17,7 +17,21 @@
       "localizedDescription": "Device-testing builds of KOReader for iOS. Install only when validating a candidate release; published testing builds remain immutable and may contain regressions.",
       "iconURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-testing/platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png",
       "tintColor": "#00AFA7",
-      "versions": []
+      "versions": [
+        {
+          "version": "2026.7.3",
+          "date": "2026-09-02",
+          "localizedDescription": "KOReader 2026.7.3 严格离线 iOS 测试版：为 TXT 安全禁用会触发主线程完整重排的双指字号调整，并修复系统取消多点触控后遗留触点导致的永久卡死；修复文件夹不可选和批量文件选择后无法继续的问题。导入内容仍会经过安全作用域协调读取并复制到应用私有书库，不保存外部文件授权。发布包通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
+          "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.3-b4/KOReader-Strict-Offline-SideStore.ipa",
+          "size": 77868615,
+          "minOSVersion": "14.0"
+        }
+      ],
+      "version": "2026.7.3",
+      "versionDate": "2026-09-02",
+      "versionDescription": "KOReader 2026.7.3 严格离线 iOS 测试版：为 TXT 安全禁用会触发主线程完整重排的双指字号调整，并修复系统取消多点触控后遗留触点导致的永久卡死；修复文件夹不可选和批量文件选择后无法继续的问题。导入内容仍会经过安全作用域协调读取并复制到应用私有书库，不保存外部文件授权。发布包通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
+      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.3-b4/KOReader-Strict-Offline-SideStore.ipa",
+      "size": 77868615
     }
   ],
   "news": []
