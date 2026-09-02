@@ -43,6 +43,10 @@
 > Reflowable documents offer an opt-in **Global reading style** under
 > **Document settings**. It synchronizes reviewed typography and margin values
 > while leaving progress, annotations, CSS, view mode, and PDF settings local.
+> In night mode, MuPDF documents (including the default PNG handler) honor the
+> per-document **Invert Document** control, which is shown only while night mode
+> is active. The non-configurable Picture Document provider keeps its iOS
+> color-preservation fallback.
 >
 > ```sh
 > make TARGET=ios xcodeproj

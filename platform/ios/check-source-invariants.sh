@@ -241,10 +241,10 @@ reject_source "${READER_GLOBAL_STYLE}" 'view_mode = true'
 require_source "${CRE_OPTIONS}" 'return Device:isIOS() and document and document.is_txt == true'
 require_source "${CRE_OPTIONS}" 'toggle = { "100%", "105%", "110%" }'
 require_source "${PIC_DOCUMENT}" 'target:invertRect(x, y, rect.w, rect.h)'
-require_source "${KOPT_INTERFACE}" 'function KoptInterface:isIOSStandaloneImage(doc)'
-require_source "${KOPT_INTERFACE}" 'if os.getenv("KO_IOS") ~= "1" then return false end'
-require_source "${KOPT_INTERFACE}" 'local ios_standalone_image = self:isIOSStandaloneImage(doc)'
-require_source "${KOPT_INTERFACE}" 'if ios_standalone_image then'
+require_source "${KOPT_INTERFACE}" 'local nightmode_invert = doc.configurable.nightmode_document == 1 and Screen.night_mode'
+require_source "${KOPT_INTERFACE}" 'Document.drawPageInverted(doc, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)'
+reject_source "${KOPT_INTERFACE}" 'isIOSStandaloneImage'
+reject_source "${KOPT_INTERFACE}" 'ios_standalone_image'
 
 reader_ready_line="$(grep -nF 'self:handleEvent(Event:new("ReaderReady"' "${READER_UI}" | head -n1 | cut -d: -f1)"
 reader_suppress_line="$(grep -nF 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)' "${READER_UI}" | head -n1 | cut -d: -f1)"

@@ -33,22 +33,6 @@ local KoptInterface = {
     default_context_size = 1024*1024,
 }
 
-local image_extensions = {
-    gif = true,
-    jpeg = true,
-    jpg = true,
-    png = true,
-    svg = true,
-    tif = true,
-    tiff = true,
-    webp = true,
-}
-
-function KoptInterface:isIOSStandaloneImage(doc)
-    if os.getenv("KO_IOS") ~= "1" then return false end
-    return image_extensions[util.getFileNameSuffix(doc.file):lower()] == true
-end
-
 local ContextCacheItem = CacheItem:new{}
 
 function ContextCacheItem:onFree()
@@ -605,22 +589,13 @@ function KoptInterface:hintReflowedPage(doc, pageno, zoom, rotation, hinting)
 end
 
 function KoptInterface:drawPage(doc, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
-    -- UIKit inverts the completed framebuffer in night mode. Standalone images
-    -- need one compensating inversion regardless of legacy per-document values.
-    local ios_standalone_image = self:isIOSStandaloneImage(doc)
-    local nightmode_invert = Screen.night_mode and (
-        doc.configurable.nightmode_document == 1 or ios_standalone_image)
+    local nightmode_invert = doc.configurable.nightmode_document == 1 and Screen.night_mode
     if doc.configurable.text_wrap == 1 then
         self:drawContextPage(doc, target, x, y, rect, pageno, zoom, rotation, nightmode_invert)
     elseif self:is_optimizing_page(doc) then
         self:drawContextPage(doc, target, x, y, rect, pageno, zoom, rotation, nightmode_invert)
     elseif nightmode_invert then
-        if ios_standalone_image then
-            Document.drawPage(doc, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
-            target:invertRect(x, y, rect.w, rect.h)
-        else
-            Document.drawPageInverted(doc, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
-        end
+        Document.drawPageInverted(doc, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
     else
         Document.drawPage(doc, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)
     end

@@ -1,8 +1,8 @@
 {
-  "marketingVersion": "2026.7.6",
-  "buildVersion": "7",
-  "releaseTag": "ios-v2026.7.6-b7",
+  "marketingVersion": "2026.7.7",
+  "buildVersion": "8",
+  "releaseTag": "ios-v2026.7.7-b8",
   "upstreamTag": "v2026.07.1",
   "channel": "beta",
-  "localizedDescription": "KOReader 2026.7.6 严格离线 iOS 测试版：保持 2026.7.5 已验证的 TXT 多触控隔离、夜间 PNG 原色显示以及 2026.7.4 文件选择器不变；修复数字字号快捷项只更新后台数值但不触发前台重排的问题。新增可选的全局阅读样式，只在流式文档间同步字体、字号、间距、页边距和字体渲染参数，并保留每本书原有样式以便关闭后恢复；PDF、进度、书签、批注、CSS 和视图模式不受影响。iOS TXT 排版面板现在直接显示 100% 至 110% 的 CJK 字宽快捷设置，并可精调至 150%，用于连续中文字符间距。LiveContainer 使用前仍需启用 Fix File Picker。"
+  "localizedDescription": "KOReader 2026.7.7 严格离线 iOS 测试版：修正 2026.7.5 对独立图片夜间模式的过度补偿。默认由 MuPDF 打开的 PNG、JPEG 等分页图片重新遵循每个文档的“反转文档”开关，不再按扩展名强制保留原色；没有配置面板的 Picture Document 路径仍保留 iOS 夜间原色兜底。继续包含 2026.7.6 的数字字号快捷渲染修复、可选全局阅读样式和中文 CJK 字宽设置，以及此前已验证的 TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。"
 }

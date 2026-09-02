@@ -351,6 +351,12 @@ upstream KOReader tag.
   actual space characters, while word expansion applies to justified Western
   words. For continuous Chinese text, use the CJK width controls shown directly
   in the TXT font-size panel; presets cover 100-110%, with fine tuning to 150%.
+- **Night-mode image behavior follows the active provider.** Reflowable books
+  use **Invert Images** for embedded artwork. MuPDF documents, including PNG by
+  default, honor their per-document **Invert Document** control, shown only
+  while night mode is active. The separate Picture Document provider has no
+  configuration panel, so iOS compensates its output automatically to preserve
+  image colors on an inverse framebuffer.
 - **Simulator builds are untested.** The `IOS_PLATFORM=iphonesimulator`
   parameter exists in `make/ios.mk` but `base/` would need to be
   rebuilt against the simulator SDK — we haven't wired up an XCFramework.
