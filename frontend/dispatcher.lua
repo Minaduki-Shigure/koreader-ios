@@ -721,60 +721,6 @@ function Dispatcher:_itemsCount(settings)
     end
 end
 
-function Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)
-    if not gesture or not Device:isIOS() then
-        return settings, false
-    end
-    local reader_ui = require("apps/reader/readerui").instance
-    if not reader_ui or not reader_ui.document
-            or reader_ui.document.is_txt ~= true
-            or (settings.increase_font == nil and settings.decrease_font == nil
-                and settings.font_size == nil) then
-        return settings, false
-    end
-
-    local filtered = util.tableDeepCopy(settings)
-    filtered.increase_font = nil
-    filtered.decrease_font = nil
-    filtered.font_size = nil
-    local original_order = util.tableGetValue(settings, "settings", "order")
-    local filtered_to_original_index
-    if original_order then
-        local filtered_order = {}
-        local original_to_filtered_index = {}
-        filtered_to_original_index = {}
-        for original_index, action in ipairs(original_order) do
-            if action ~= "increase_font" and action ~= "decrease_font"
-                    and action ~= "font_size" then
-                table.insert(filtered_order, action)
-                local filtered_index = #filtered_order
-                original_to_filtered_index[original_index] = filtered_index
-                filtered_to_original_index[filtered_index] = original_index
-            end
-        end
-        filtered.settings.order = filtered_order
-
-        local original_index = settings.settings.execute_one_by_one
-        if original_index then
-            filtered.settings.execute_one_by_one = nil
-        end
-        if original_index and #filtered_order > 0 then
-            if original_index < 1 or original_index > #original_order then
-                original_index = 1
-            end
-            for offset = 0, #original_order - 1 do
-                local candidate = (original_index + offset - 1) % #original_order + 1
-                local filtered_index = original_to_filtered_index[candidate]
-                if filtered_index then
-                    filtered.settings.execute_one_by_one = filtered_index
-                    break
-                end
-            end
-        end
-    end
-    return filtered, true, filtered_to_original_index
-end
-
 -- Returns a display name for the item.
 function Dispatcher:getNameFromItem(item, settings, dont_show_value)
     if settingsList[item] == nil then
@@ -1553,23 +1499,7 @@ function Dispatcher:execute(settings, exec_props)
             or (exec_props and exec_props.qm_show) then
         return Dispatcher._showAsMenu(settings, exec_props)
     end
-    local gesture = exec_props and exec_props.gesture
-    local original_settings = settings
-    local blocked_font_gesture
-    local one_by_one_index_map
-    settings, blocked_font_gesture, one_by_one_index_map =
-        Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)
-    if blocked_font_gesture then
-        Notification:notify(_("Gesture font resizing is unavailable for plain text on iOS."), nil, true)
-        if Dispatcher:_itemsCount(settings) == 0 then return true end
-    end
-
-    -- BatchedUpdateDone always asks ReaderRolling to update its position. Avoid
-    -- that implicit rerender when the only removed action was an unsafe font
-    -- resize; the remaining independent actions can run normally.
-    local has_many = not blocked_font_gesture
-        and not (settings.settings and settings.settings.execute_one_by_one)
-        and Dispatcher:_itemsCount(settings) > 1
+    local has_many = not (settings.settings and settings.settings.execute_one_by_one) and Dispatcher:_itemsCount(settings) > 1
     if has_many then
         UIManager:broadcastEvent(Event:new("BatchedUpdate"))
         UIManager:setSilentMode(true)
@@ -1578,13 +1508,8 @@ function Dispatcher:execute(settings, exec_props)
     if settings.settings and settings.settings.notify then
         Notification:notify(T(_("Executing profile: %1"), settings.settings.name))
     end
-    local iterator, state, control = Dispatcher.iter_func(settings, true)
-    if blocked_font_gesture and one_by_one_index_map and settings.settings
-            and settings.settings.execute_one_by_one and original_settings.settings then
-        original_settings.settings.execute_one_by_one =
-            one_by_one_index_map[settings.settings.execute_one_by_one]
-    end
-    for k, v in iterator, state, control do
+    local gesture = exec_props and exec_props.gesture
+    for k, v in Dispatcher.iter_func(settings, true) do
         if type(k) == "number" then
             k = v
             v = settings[k]

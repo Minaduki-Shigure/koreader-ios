@@ -72,7 +72,7 @@
     <key>UIFileSharingEnabled</key>
     <false/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
-    <true/>
+    <false/>
     <key>NSHumanReadableCopyright</key>
     <string>© KOReader contributors</string>
     <key>UIStatusBarHidden</key>

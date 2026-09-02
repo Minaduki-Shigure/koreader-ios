@@ -105,6 +105,13 @@ static BOOL ko_lstat_url(NSURL *url, struct stat *info, NSError **error) {
     return NO;
 }
 
+static BOOL ko_url_is_strictly_inside_directory(NSURL *url, NSURL *directory) {
+    NSString *path = url.URLByResolvingSymlinksInPath.URLByStandardizingPath.path;
+    NSString *root = directory.URLByResolvingSymlinksInPath.URLByStandardizingPath.path;
+    return path && root && ![path isEqualToString:root]
+        && [path hasPrefix:[root stringByAppendingString:@"/"]];
+}
+
 static NSSet<NSString *> *ko_allowed_extensions(void) {
     static NSSet<NSString *> *extensions;
     static dispatch_once_t onceToken;
@@ -1067,6 +1074,7 @@ static UIViewController *ko_ios_top_view_controller(void) {
 @interface KOIOSImportDelegate : NSObject
     <UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate>
 @property(nonatomic) BOOL selectionHandled;
+@property(nonatomic) ko_import_selection_mode_t selectionMode;
 @end
 
 @implementation KOIOSImportDelegate
@@ -1083,11 +1091,43 @@ static UIViewController *ko_ios_top_view_controller(void) {
     }
 
     NSArray<NSURL *> *sourceURLs = [urls copy];
+    BOOL pickerCopiedSelection =
+        self.selectionMode == KO_IMPORT_SELECT_FILES;
     dispatch_async(ko_import_io_queue(), ^{
         @autoreleasepool {
             NSError *error = nil;
-            KOIOSImportResult *result =
-                ko_copy_selection_to_books(sourceURLs, YES, &error);
+            KOIOSImportResult *result = nil;
+            @try {
+                BOOL requireSecurityScope = !pickerCopiedSelection;
+                result = ko_copy_selection_to_books(sourceURLs,
+                                                     requireSecurityScope,
+                                                     &error);
+            } @finally {
+                /* File mode may leave a picker-owned temporary copy until
+                 * process exit. Remove only descendants of the app's temporary
+                 * or Inbox roots, never a root or an external folder URL. */
+                if (pickerCopiedSelection) {
+                    NSURL *temporaryRoot = [NSURL fileURLWithPath:NSTemporaryDirectory()
+                                                         isDirectory:YES];
+                    NSURL *inboxRoot = [[NSURL fileURLWithPath:NSHomeDirectory()
+                                                 isDirectory:YES]
+                        URLByAppendingPathComponent:@"Documents/Inbox"
+                                          isDirectory:YES];
+                    [sourceURLs enumerateObjectsUsingBlock:^(NSURL *sourceURL,
+                                                              NSUInteger index,
+                                                              BOOL *stop) {
+                        (void)index;
+                        (void)stop;
+                        if (ko_url_is_strictly_inside_directory(sourceURL,
+                                                                temporaryRoot)
+                                || ko_url_is_strictly_inside_directory(sourceURL,
+                                                                       inboxRoot)) {
+                            [NSFileManager.defaultManager removeItemAtURL:sourceURL
+                                                                    error:nil];
+                        }
+                    }];
+                }
+            }
             if (result) {
                 ko_finish_import(KO_IMPORT_DONE_OK, result.path, nil,
                                  result.importedCount, result.skippedCount,
@@ -1153,20 +1193,23 @@ ko_ios_import_document_start(ko_import_selection_mode_t selectionMode) {
                 g_import_delegate = [[KOIOSImportDelegate alloc] init];
             }
             g_import_delegate.selectionHandled = NO;
+            g_import_delegate.selectionMode = selectionMode;
 
-            BOOL selectsFiles = selectionMode == KO_IMPORT_SELECT_FILES;
             NSArray<UTType *> *contentTypes =
-                selectsFiles ? @[UTTypeData] : @[UTTypeFolder];
+                selectionMode == KO_IMPORT_SELECT_FOLDERS
+                    ? @[UTTypeFolder]
+                    : @[UTTypeData];
+            BOOL copySelection = selectionMode == KO_IMPORT_SELECT_FILES;
             UIDocumentPickerViewController *picker =
                 [[UIDocumentPickerViewController alloc]
                     initForOpeningContentTypes:contentTypes
-                                       asCopy:NO];
+                                       asCopy:copySelection];
             /* Accessing presentationController freezes the controller type
              * for the current presentation style, so choose the style first. */
             picker.modalPresentationStyle = UIModalPresentationFullScreen;
             picker.delegate = g_import_delegate;
             picker.presentationController.delegate = g_import_delegate;
-            picker.allowsMultipleSelection = selectsFiles;
+            picker.allowsMultipleSelection = YES;
             [top presentViewController:picker animated:YES completion:nil];
         }
     });

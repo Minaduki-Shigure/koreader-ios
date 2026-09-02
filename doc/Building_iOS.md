@@ -95,16 +95,15 @@ declare `marketplaceID`, `Build`, or other AltStore PAL notarization fields.
 ### Using the iOS port
 
 In KOReader's main menu, choose **Import files...** to select one or more
-documents, or **Import folder...** to select one complete folder.
+documents, or **Import folder...** to select one or more complete folders.
 Imports are copied into the private Books library. A single file can be opened
 immediately; a batch or folder opens as a browsable collection. Folder imports
 preserve their supported-document hierarchy while hidden files, symbolic
 links, packages, sidecars, scripts, unsupported formats, and generic archives
 are skipped.
 
-An import accepts at most 64 top-level file selections or one folder,
-512 supported documents, 8192 scanned entries, 2 GiB per file, 4 GiB in total,
-and 32 directory levels.
+An import accepts at most 64 top-level selections, 512 supported documents,
+8192 scanned entries, 2 GiB per file, 4 GiB in total, and 32 directory levels.
 Provider or filesystem errors and limit violations roll the entire batch back;
 unsupported or unsafe entries are reported as skipped. The app never retains
 security-scoped access to the original files or folders.
@@ -270,12 +269,12 @@ upstream KOReader tag.
   in private app-container locations with iOS data protection enabled;
   LiveContainer instead hosts the same logical paths inside its guest container,
   subject to the isolation limitation described above.
-- Documents enter through the system picker as bounded file or folder imports.
-  Open-in-place selection is enabled so provider-backed items can return to the
-  app without an opaque system copy delay; KOReader then coordinates each read,
-  copies accepted documents into private Books storage, and releases access.
-  File Sharing, document-type launch arguments, persistent provider bookmarks,
-  editing provider originals, and ongoing external folder access are disabled.
+- Documents enter through the system picker as bounded file or folder copies.
+  File selections use picker-managed copies; folder URLs are accessed only
+  transiently while KOReader copies accepted documents into private Books
+  storage. File Sharing, general open-in-place document support, document-type
+  launch arguments, persistent provider bookmarks, editing provider originals,
+  and ongoing external folder access are disabled.
 - File browsing and document launch are confined to the private Books tree,
   including canonical-path and symlink checks. Legacy history, collections,
   shortcuts, and startup state cannot reopen paths outside that tree.
@@ -334,10 +333,13 @@ upstream KOReader tag.
   as a separate process. The strict build removes that executable and its GLib
   dependency, dictionary data, and the reader dictionary module instead of
   exposing an action that cannot run reliably on iOS.
-- **No retained external document access.** The system document picker provides
-  temporary security-scoped URLs for bounded selections of supported files or
-  one complete folder. The importer copies accepted documents into private
-  Books storage and does not retain access to provider-owned files or folders.
+- **No retained external document access.** The system document picker can copy
+  bounded selections of supported files or complete folders into private Books
+  storage. The port does not retain security-scoped access to files or folders
+  owned by other providers.
+- **TXT pinch resizing is currently unsafe on iOS.** A two-finger font-size
+  gesture can still hang the app. Use KOReader's font-size controls instead
+  until the native touch path is fixed and verified on a physical device.
 - **Simulator builds are untested.** The `IOS_PLATFORM=iphonesimulator`
   parameter exists in `make/ios.mk` but `base/` would need to be
   rebuilt against the simulator SDK — we haven't wired up an XCFramework.
