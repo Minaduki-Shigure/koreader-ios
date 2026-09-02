@@ -202,6 +202,72 @@ jobs:
           "${host_make[@]}" testfront 2>&1 | \
             tee artifacts/logs/testfront.log
 
+      - name: Summarize frontend test failure
+        if: ${{ failure() }}
+        run: |
+          set -u
+          logs=(
+            artifacts/logs/build-front-test-host.log
+            artifacts/logs/safesettings.log
+            artifacts/logs/readerfont.log
+            artifacts/logs/ios_system_appearance.log
+            artifacts/logs/docsettings_hardened_ios.log
+            artifacts/logs/filemanagerutil_ios.log
+            artifacts/logs/iosimporter.log
+            artifacts/logs/writable_lua_hardened_ios.log
+            artifacts/logs/testfront.log
+          )
+          last_log=""
+          for log in "${logs[@]}"; do
+            if [ -s "${log}" ]; then
+              last_log="${log}"
+            fi
+          done
+
+          if [ -z "${last_log}" ]; then
+            echo "::error title=Frontend tests failed::No non-empty frontend log was captured; see the failure artifact."
+            exit 0
+          fi
+
+          excerpt="${RUNNER_TEMP}/frontend-failure-excerpt.txt"
+          tail -n 120 "${last_log}" | tail -c 16000 | ruby -e '
+            text = STDIN.read.encode(
+              "UTF-8", invalid: :replace, undef: :replace, replace: "?"
+            )
+            text.gsub!(/\e(?:\[[0-?]*[ -\/]*[@-~]|\][^\a]*(?:\a|\e\\))/, "")
+            text.delete!("\r")
+            text.gsub!(
+              /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/,
+              "[REDACTED]"
+            )
+            text.gsub!(
+              /(Authorization:\s*(?:Bearer|token)\s+)\S+/i,
+              "\\1[REDACTED]"
+            )
+            print text
+          ' >"${excerpt}"
+
+          {
+            echo "### Frontend test failure"
+            echo
+            echo "- Log: \`${last_log##*/}\`"
+            echo "- Excerpt: final 120 lines, capped at 16 KiB"
+            echo
+            sed 's/^/    /' "${excerpt}"
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+          summary="$(grep -m1 -E \
+            '(^Failure|^Error|FAILED|_spec\.lua:[0-9]+:|make(\[[0-9]+\])?: \*\*\*)' \
+            "${excerpt}" || true)"
+          if [ -z "${summary}" ]; then
+            summary="See ${last_log##*/} excerpt in the job summary"
+          fi
+          summary="$(printf '%.500s' "${summary}")"
+          summary="${summary//'%'/'%25'}"
+          summary="${summary//$'\r'/'%0D'}"
+          summary="${summary//$'\n'/'%0A'}"
+          printf '::error title=Frontend tests failed::%s\n' "${summary}"
+
       - name: Generate Xcode project
         run: |
           set -o pipefail
