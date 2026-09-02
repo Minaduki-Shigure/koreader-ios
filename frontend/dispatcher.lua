@@ -1529,6 +1529,7 @@ function Dispatcher:execute(settings, exec_props)
         return Dispatcher._showAsMenu(settings, exec_props)
     end
     local gesture = exec_props and exec_props.gesture
+    local original_settings = settings
     local blocked_font_gesture
     settings, blocked_font_gesture = Dispatcher:_withoutUnsafeIOSPlainTextFontActions(
         settings, gesture)
@@ -1537,7 +1538,12 @@ function Dispatcher:execute(settings, exec_props)
         if Dispatcher:_itemsCount(settings) == 0 then return true end
     end
 
-    local has_many = not (settings.settings and settings.settings.execute_one_by_one) and Dispatcher:_itemsCount(settings) > 1
+    -- BatchedUpdateDone always asks ReaderRolling to update its position. Avoid
+    -- that implicit rerender when the only removed action was an unsafe font
+    -- resize; the remaining independent actions can run normally.
+    local has_many = not blocked_font_gesture
+        and not (settings.settings and settings.settings.execute_one_by_one)
+        and Dispatcher:_itemsCount(settings) > 1
     if has_many then
         UIManager:broadcastEvent(Event:new("BatchedUpdate"))
         UIManager:setSilentMode(true)
@@ -1587,6 +1593,11 @@ function Dispatcher:execute(settings, exec_props)
                 UIManager:sendEvent(Event:new("KeyRelease", key))
             end
         end
+    end
+    if blocked_font_gesture and settings.settings and settings.settings.order
+            and original_settings.settings then
+        original_settings.settings.execute_one_by_one =
+            settings.settings.execute_one_by_one
     end
     Notification:resetNotifySource()
     if has_many then

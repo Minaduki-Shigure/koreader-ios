@@ -56,29 +56,34 @@ describe("Dispatcher runtime actions", function()
             stub(UIManager, "sendEvent", function(_, event)
                 table.insert(sent_events, event)
             end)
+            stub(UIManager, "broadcastEvent")
         end)
 
         after_each(function()
             Device.isIOS:revert()
             Notification.notify:revert()
             UIManager.sendEvent:revert()
+            UIManager.broadcastEvent:revert()
             ReaderUI.instance = original_reader_ui
         end)
 
         it("blocks fixed-step font actions while preserving other actions", function()
             Dispatcher:execute({
                 decrease_font = 4,
+                history = true,
                 show_menu = true,
                 settings = {
-                    order = { "decrease_font", "show_menu" },
+                    order = { "decrease_font", "history", "show_menu" },
                 },
             }, {
                 gesture = { ges = "pinch" },
             })
 
-            assert.equals(1, #sent_events)
-            assert.equals("onShowMenu", sent_events[1].handler)
+            assert.equals(2, #sent_events)
+            assert.equals("onShowHist", sent_events[1].handler)
+            assert.equals("onShowMenu", sent_events[2].handler)
             assert.stub(Notification.notify).was.called(1)
+            assert.stub(UIManager.broadcastEvent).was.called(0)
         end)
 
         it("keeps numeric non-gesture font actions available", function()
