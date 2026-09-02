@@ -48,6 +48,7 @@ describe("Dispatcher runtime actions", function()
             ReaderUI.instance = {
                 document = { is_txt = true },
                 rolling = {},
+                gestures = {},
             }
             sent_events = {}
             stub(Device, "isIOS")
@@ -93,6 +94,80 @@ describe("Dispatcher runtime actions", function()
             assert.equals("onIncreaseFontSize", sent_events[1].handler)
             assert.equals(2, sent_events[1].args[1])
             assert.stub(Notification.notify).was.called(0)
+        end)
+
+        it("preserves one-by-one action identity after filtering", function()
+            local actions = {
+                decrease_font = 4,
+                history = true,
+                show_menu = true,
+                settings = {
+                    order = { "decrease_font", "history", "show_menu" },
+                    execute_one_by_one = 3,
+                },
+            }
+
+            Dispatcher:execute(actions, { gesture = { ges = "pinch" } })
+            assert.equals(1, #sent_events)
+            assert.equals("onShowMenu", sent_events[1].handler)
+            assert.equals(2, actions.settings.execute_one_by_one)
+
+            sent_events = {}
+            Dispatcher:execute(actions, { gesture = { ges = "pinch" } })
+            assert.equals(1, #sent_events)
+            assert.equals("onShowHist", sent_events[1].handler)
+            assert.equals(3, actions.settings.execute_one_by_one)
+            assert.stub(UIManager.broadcastEvent).was.called(0)
+        end)
+
+        it("skips a blocked one-by-one action without losing the next safe action", function()
+            local actions = {
+                decrease_font = 4,
+                history = true,
+                show_menu = true,
+                settings = {
+                    order = { "decrease_font", "history", "show_menu" },
+                    execute_one_by_one = 1,
+                },
+            }
+
+            Dispatcher:execute(actions, { gesture = { ges = "pinch" } })
+            assert.equals(1, #sent_events)
+            assert.equals("onShowHist", sent_events[1].handler)
+            assert.equals(3, actions.settings.execute_one_by_one)
+            assert.stub(UIManager.broadcastEvent).was.called(0)
+        end)
+
+        it("keeps a single remaining one-by-one action isolated", function()
+            local actions = {
+                decrease_font = 4,
+                history = true,
+                settings = {
+                    order = { "decrease_font", "history" },
+                    execute_one_by_one = 1,
+                },
+            }
+
+            Dispatcher:execute(actions, { gesture = { ges = "pinch" } })
+            assert.equals(1, #sent_events)
+            assert.equals("onShowHist", sent_events[1].handler)
+            assert.equals(2, actions.settings.execute_one_by_one)
+            assert.stub(UIManager.broadcastEvent).was.called(0)
+        end)
+
+        it("leaves one-by-one state unchanged when every action is blocked", function()
+            local actions = {
+                decrease_font = 4,
+                settings = {
+                    order = { "decrease_font" },
+                    execute_one_by_one = 1,
+                },
+            }
+
+            assert.is_true(Dispatcher:execute(actions, { gesture = { ges = "pinch" } }))
+            assert.equals(0, #sent_events)
+            assert.equals(1, actions.settings.execute_one_by_one)
+            assert.stub(UIManager.broadcastEvent).was.called(0)
         end)
     end)
 end)

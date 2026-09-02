@@ -736,18 +736,41 @@ function Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)
     local filtered = util.tableDeepCopy(settings)
     filtered.increase_font = nil
     filtered.decrease_font = nil
-    local order = util.tableGetValue(filtered, "settings", "order")
-    if order then
-        util.arrayRemove(order, function(items, index)
-            return items[index] ~= "increase_font"
-                and items[index] ~= "decrease_font"
-        end)
-        if #order < 2 then
-            filtered.settings.order = nil
+    local original_order = util.tableGetValue(settings, "settings", "order")
+    local filtered_to_original_index
+    if original_order then
+        local filtered_order = {}
+        local original_to_filtered_index = {}
+        filtered_to_original_index = {}
+        for original_index, action in ipairs(original_order) do
+            if action ~= "increase_font" and action ~= "decrease_font" then
+                table.insert(filtered_order, action)
+                local filtered_index = #filtered_order
+                original_to_filtered_index[original_index] = filtered_index
+                filtered_to_original_index[filtered_index] = original_index
+            end
+        end
+        filtered.settings.order = filtered_order
+
+        local original_index = settings.settings.execute_one_by_one
+        if original_index then
             filtered.settings.execute_one_by_one = nil
         end
+        if original_index and #filtered_order > 0 then
+            if original_index < 1 or original_index > #original_order then
+                original_index = 1
+            end
+            for offset = 0, #original_order - 1 do
+                local candidate = (original_index + offset - 1) % #original_order + 1
+                local filtered_index = original_to_filtered_index[candidate]
+                if filtered_index then
+                    filtered.settings.execute_one_by_one = filtered_index
+                    break
+                end
+            end
+        end
     end
-    return filtered, true
+    return filtered, true, filtered_to_original_index
 end
 
 -- Returns a display name for the item.
@@ -1531,8 +1554,9 @@ function Dispatcher:execute(settings, exec_props)
     local gesture = exec_props and exec_props.gesture
     local original_settings = settings
     local blocked_font_gesture
-    settings, blocked_font_gesture = Dispatcher:_withoutUnsafeIOSPlainTextFontActions(
-        settings, gesture)
+    local one_by_one_index_map
+    settings, blocked_font_gesture, one_by_one_index_map =
+        Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)
     if blocked_font_gesture then
         Notification:notify(_("Pinch font resizing is unavailable for plain text on iOS."), nil, true)
         if Dispatcher:_itemsCount(settings) == 0 then return true end
@@ -1594,10 +1618,10 @@ function Dispatcher:execute(settings, exec_props)
             end
         end
     end
-    if blocked_font_gesture and settings.settings and settings.settings.order
-            and original_settings.settings then
+    if blocked_font_gesture and one_by_one_index_map and settings.settings
+            and settings.settings.execute_one_by_one and original_settings.settings then
         original_settings.settings.execute_one_by_one =
-            settings.settings.execute_one_by_one
+            one_by_one_index_map[settings.settings.execute_one_by_one]
     end
     Notification:resetNotifySource()
     if has_many then
