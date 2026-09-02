@@ -722,20 +722,21 @@ function Dispatcher:_itemsCount(settings)
 end
 
 function Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)
-    if not gesture or (gesture.ges ~= "pinch" and gesture.ges ~= "spread")
-            or not Device:isIOS() then
+    if not gesture or not Device:isIOS() then
         return settings, false
     end
     local reader_ui = require("apps/reader/readerui").instance
     if not reader_ui or not reader_ui.document
             or reader_ui.document.is_txt ~= true
-            or (settings.increase_font == nil and settings.decrease_font == nil) then
+            or (settings.increase_font == nil and settings.decrease_font == nil
+                and settings.font_size == nil) then
         return settings, false
     end
 
     local filtered = util.tableDeepCopy(settings)
     filtered.increase_font = nil
     filtered.decrease_font = nil
+    filtered.font_size = nil
     local original_order = util.tableGetValue(settings, "settings", "order")
     local filtered_to_original_index
     if original_order then
@@ -743,7 +744,8 @@ function Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)
         local original_to_filtered_index = {}
         filtered_to_original_index = {}
         for original_index, action in ipairs(original_order) do
-            if action ~= "increase_font" and action ~= "decrease_font" then
+            if action ~= "increase_font" and action ~= "decrease_font"
+                    and action ~= "font_size" then
                 table.insert(filtered_order, action)
                 local filtered_index = #filtered_order
                 original_to_filtered_index[original_index] = filtered_index
@@ -1558,7 +1560,7 @@ function Dispatcher:execute(settings, exec_props)
     settings, blocked_font_gesture, one_by_one_index_map =
         Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)
     if blocked_font_gesture then
-        Notification:notify(_("Pinch font resizing is unavailable for plain text on iOS."), nil, true)
+        Notification:notify(_("Gesture font resizing is unavailable for plain text on iOS."), nil, true)
         if Dispatcher:_itemsCount(settings) == 0 then return true end
     end
 

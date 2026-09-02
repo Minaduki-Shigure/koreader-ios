@@ -446,7 +446,7 @@ end
 
 function ReaderFont:_rejectUnsafeIOSPlainTextGesture(ges)
     if not self:_isUnsafeIOSPlainTextGesture(ges) then return false end
-    Notification:notify(_("Pinch font resizing is unavailable for plain text on iOS."), nil, true)
+    Notification:notify(_("Gesture font resizing is unavailable for plain text on iOS."), nil, true)
     return true
 end
 

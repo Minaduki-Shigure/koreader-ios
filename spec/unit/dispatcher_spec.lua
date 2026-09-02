@@ -34,7 +34,7 @@ describe("Dispatcher runtime actions", function()
         assert.is_truthy(Dispatcher:removeAction("nopenopenope"))
     end)
 
-    describe("iOS plain-text pinch safety", function()
+    describe("iOS plain-text gesture font safety", function()
         local Device, Notification, ReaderUI, UIManager
         local original_reader_ui
         local sent_events
@@ -50,6 +50,7 @@ describe("Dispatcher runtime actions", function()
                 document = { is_txt = true },
                 rolling = {},
                 gestures = {},
+                profiles = {},
             }
             sent_events = {}
             actions_observed_during_event = nil
@@ -103,13 +104,41 @@ describe("Dispatcher runtime actions", function()
             assert.stub(Notification.notify).was.called(0)
         end)
 
+        it("blocks absolute font size actions carried by a gesture profile", function()
+            Dispatcher:execute({
+                font_size = 24,
+                history = true,
+                settings = {
+                    name = "TXT gesture profile",
+                    order = { "font_size", "history" },
+                },
+            }, {
+                gesture = { ges = "swipe" },
+            })
+
+            assert.equals(1, #sent_events)
+            assert.equals("onShowHist", sent_events[1].handler)
+            assert.stub(Notification.notify).was.called(1)
+            assert.stub(UIManager.broadcastEvent).was.called(0)
+        end)
+
+        it("keeps absolute font size actions available without a gesture", function()
+            local settings = { font_size = 24 }
+            local filtered, blocked =
+                Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings)
+
+            assert.is_false(blocked)
+            assert.is_true(filtered == settings)
+            assert.equals(24, filtered.font_size)
+        end)
+
         it("preserves one-by-one action identity after filtering", function()
             local actions = {
-                decrease_font = 4,
+                font_size = 24,
                 history = true,
                 show_menu = true,
                 settings = {
-                    order = { "decrease_font", "history", "show_menu" },
+                    order = { "font_size", "history", "show_menu" },
                     execute_one_by_one = 3,
                 },
             }
