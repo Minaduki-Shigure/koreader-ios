@@ -19,6 +19,14 @@
       "tintColor": "#00AFA7",
       "versions": [
         {
+          "version": "2026.7.7",
+          "date": "2026-09-02",
+          "localizedDescription": "KOReader 2026.7.7 严格离线 iOS 测试版：修正 2026.7.5 对独立图片夜间模式的过度补偿。默认由 MuPDF 打开的 PNG、JPEG 等分页图片重新遵循每个文档的“反转文档”开关，不再按扩展名强制保留原色；没有配置面板的 Picture Document 路径仍保留 iOS 夜间原色兜底。继续包含 2026.7.6 的数字字号快捷渲染修复、可选全局阅读样式和中文 CJK 字宽设置，以及此前已验证的 TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
+          "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-v2026.7.7-b8/KOReader-Strict-Offline-SideStore.ipa",
+          "size": 77871728,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2026.7.2",
           "date": "2026-09-01",
           "localizedDescription": "KOReader 2026.7.2 严格离线 iOS 测试版：修复 TXT 与其他可重排文档双指缩放时的卡死；新增跟随 iOS 浅色/深色外观自动切换夜间模式；新增批量文件与完整文件夹导入，并保留目录结构、过滤不安全项目、在失败时整批回滚。发布包通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
@@ -35,11 +43,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2026.7.2",
-      "versionDate": "2026-09-01",
-      "versionDescription": "KOReader 2026.7.2 严格离线 iOS 测试版：修复 TXT 与其他可重排文档双指缩放时的卡死；新增跟随 iOS 浅色/深色外观自动切换夜间模式；新增批量文件与完整文件夹导入，并保留目录结构、过滤不安全项目、在失败时整批回滚。发布包通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
-      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-v2026.7.2-b3/KOReader-Strict-Offline-SideStore.ipa",
-      "size": 77868013
+      "version": "2026.7.7",
+      "versionDate": "2026-09-02",
+      "versionDescription": "KOReader 2026.7.7 严格离线 iOS 测试版：修正 2026.7.5 对独立图片夜间模式的过度补偿。默认由 MuPDF 打开的 PNG、JPEG 等分页图片重新遵循每个文档的“反转文档”开关，不再按扩展名强制保留原色；没有配置面板的 Picture Document 路径仍保留 iOS 夜间原色兜底。继续包含 2026.7.6 的数字字号快捷渲染修复、可选全局阅读样式和中文 CJK 字宽设置，以及此前已验证的 TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
+      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-v2026.7.7-b8/KOReader-Strict-Offline-SideStore.ipa",
+      "size": 77871728
     }
   ],
   "news": []
