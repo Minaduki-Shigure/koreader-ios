@@ -341,17 +341,21 @@ upstream KOReader tag.
   drains a complete multitouch sequence before KOReader can dispatch a TXT
   font-size gesture. Use KOReader's font-size controls instead. Multitouch in
   other document types remains available.
-- **System safe-area gestures stay outside KOReader.** A touch that starts in
-  the non-rendered notch or Home Indicator inset is consumed at the SDL input
-  boundary. A touch that starts in the rendered canvas remains active if it
-  later moves into an inset, so ordinary edge drags and menu gestures that
-  begin above the system region retain their existing behavior.
+- **System safe-area gestures stay outside KOReader.** The fullscreen SDL
+  controller does not defer Home Indicator gestures, so horizontal app
+  switching belongs to iOS from the first contact. A touch that starts in the
+  non-rendered notch or Home Indicator inset is consumed at the SDL input
+  boundary. SDL's watcher-only lifecycle events are bridged into the regular
+  input queue, where every foreground/background boundary cancels incomplete
+  contacts before rendering resumes. Ordinary edge drags and menu gestures
+  that begin above the system region retain their existing behavior.
 - **Global reading style is opt-in.** In a reflowable document, open the top
   menu, then **Settings -> Document settings -> Global reading style**. Enabling
-  it copies the current font, typography, and margin values into a reviewed
-  global whitelist. Existing per-document style values are preserved and
-  become active again if the option is disabled. PDF/Kopt settings, reading
-  progress, bookmarks, annotations, CSS, and view mode remain document-local.
+  it copies the current font, typography, margin, and alternative top status
+  bar visibility values into a reviewed global whitelist. Existing
+  per-document style values are preserved and become active again if the
+  option is disabled. PDF/Kopt settings, reading progress, bookmarks,
+  annotations, CSS, and view mode remain document-local.
 - **Chinese TXT spacing uses CJK width scaling.** Word spacing only changes
   actual space characters, while word expansion applies to justified Western
   words. For continuous Chinese text, use the CJK width controls shown directly

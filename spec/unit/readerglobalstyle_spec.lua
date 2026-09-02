@@ -15,6 +15,9 @@ describe("ReaderGlobalStyle", function()
             delSetting = function(self, key)
                 self.data[key] = nil
             end,
+            has = function(self, key)
+                return self.data[key] ~= nil
+            end,
             isTrue = function(self, key)
                 return self.data[key] == true
             end,
@@ -29,18 +32,28 @@ describe("ReaderGlobalStyle", function()
     it("keeps global style values while loading document-specific behavior", function()
         local configurable = {
             font_size = 30,
+            status_line = 0,
             view_mode = 0,
             word_spacing = { 100, 90 },
         }
         local document_settings = newSettings{
             copt_font_size = 18,
+            copt_status_line = 1,
             copt_view_mode = 1,
             copt_word_spacing = { 75, 50 },
         }
 
-        ReaderGlobalStyle:loadDocumentSettings(configurable, document_settings, "copt_")
+        local global_settings = newSettings{
+            copt_font_size = 30,
+            copt_status_line = 0,
+            copt_word_spacing = { 100, 90 },
+        }
+
+        ReaderGlobalStyle:loadDocumentSettings(
+            configurable, document_settings, "copt_", global_settings)
 
         assert.are.equal(30, configurable.font_size)
+        assert.are.equal(0, configurable.status_line)
         assert.are.equal(1, configurable.view_mode)
         assert.same({ 100, 90 }, configurable.word_spacing)
     end)
@@ -48,11 +61,13 @@ describe("ReaderGlobalStyle", function()
     it("updates global style without overwriting old per-document style", function()
         local configurable = {
             font_size = 32,
+            status_line = 0,
             view_mode = 1,
             word_spacing = { 100, 90 },
         }
         local document_settings = newSettings{
             copt_font_size = 18,
+            copt_status_line = 1,
             copt_view_mode = 0,
             copt_word_spacing = { 75, 50 },
         }
@@ -62,13 +77,53 @@ describe("ReaderGlobalStyle", function()
             configurable, document_settings, "copt_", global_settings)
 
         assert.are.equal(32, global_settings.data.copt_font_size)
+        assert.are.equal(0, global_settings.data.copt_status_line)
         assert.same({ 100, 90 }, global_settings.data.copt_word_spacing)
         assert.are.equal(18, document_settings.data.copt_font_size)
+        assert.are.equal(1, document_settings.data.copt_status_line)
         assert.same({ 75, 50 }, document_settings.data.copt_word_spacing)
         assert.are.equal(1, document_settings.data.copt_view_mode)
 
         configurable.word_spacing[1] = 10
         assert.same({ 100, 90 }, global_settings.data.copt_word_spacing)
+    end)
+
+    it("seeds a newly global style key from the first opened document", function()
+        local configurable = { status_line = 1 }
+        local document_settings = newSettings{ copt_status_line = 0 }
+        local global_settings = newSettings()
+
+        ReaderGlobalStyle:loadDocumentSettings(
+            configurable, document_settings, "copt_", global_settings)
+
+        assert.are.equal(0, configurable.status_line)
+        assert.are.equal(0, global_settings.data.copt_status_line)
+        assert.are.equal(0, document_settings.data.copt_status_line)
+    end)
+
+    it("keeps an existing global status bar choice across documents", function()
+        local configurable = { status_line = 0 }
+        local document_settings = newSettings{ copt_status_line = 1 }
+        local global_settings = newSettings{ copt_status_line = 0 }
+
+        ReaderGlobalStyle:loadDocumentSettings(
+            configurable, document_settings, "copt_", global_settings)
+
+        assert.are.equal(0, configurable.status_line)
+        assert.are.equal(0, global_settings.data.copt_status_line)
+        assert.are.equal(1, document_settings.data.copt_status_line)
+    end)
+
+    it("seeds a missing global key from the current default", function()
+        local configurable = { status_line = 1 }
+        local document_settings = newSettings()
+        local global_settings = newSettings()
+
+        ReaderGlobalStyle:loadDocumentSettings(
+            configurable, document_settings, "copt_", global_settings)
+
+        assert.are.equal(1, configurable.status_line)
+        assert.are.equal(1, global_settings.data.copt_status_line)
     end)
 
     it("detaches table values loaded from global settings", function()
@@ -86,6 +141,7 @@ describe("ReaderGlobalStyle", function()
         assert.is_true(ReaderGlobalStyle:isStyleKey("font_size"))
         assert.is_true(ReaderGlobalStyle:isStyleKey("cjk_width_scaling"))
         assert.is_true(ReaderGlobalStyle:isStyleKey("h_page_margins"))
+        assert.is_true(ReaderGlobalStyle:isStyleKey("status_line"))
         assert.is_false(ReaderGlobalStyle:isStyleKey("block_rendering_mode"))
         assert.is_false(ReaderGlobalStyle:isStyleKey("embedded_css"))
         assert.is_false(ReaderGlobalStyle:isStyleKey("view_mode"))
@@ -181,6 +237,15 @@ describe("ReaderConfig global style routing", function()
         assert.stub(ReaderGlobalStyle.setEnabled).was_called_with(
             ReaderGlobalStyle, true)
         assert.stub(G_reader_settings.flush).was.called(1)
+    end)
+
+    it("routes top status bar changes through the global style store", function()
+        local config = newConfig(CreOptions)
+
+        config:onConfigChange("status_line", 0)
+
+        assert.stub(ReaderGlobalStyle.saveStyleSetting).was_called_with(
+            ReaderGlobalStyle, "status_line", 0, "copt_")
     end)
 
     it("uses global style routing only for iOS reflowable documents", function()

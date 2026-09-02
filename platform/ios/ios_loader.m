@@ -138,6 +138,11 @@ int main(int argc, char *argv[]) {
          * actual screen. */
         setenv("SDL_FULLSCREEN", "1", 1);
 
+        /* A fullscreen SDL UIKit controller otherwise delays every system-edge
+         * gesture. Let iOS own the Home Indicator swipe immediately so a
+         * horizontal app-switch cannot begin as a KOReader touch sequence. */
+        setenv("SDL_IOS_HIDE_HOME_INDICATOR", "0", 1);
+
         /* Disable SDL's synthesis of mouse events from touches. On iOS
          * SDL3 fires both a FINGER_DOWN and a synthetic MOUSE_BUTTON_DOWN
          * for every tap, and the synthesized event isn't reliably tagged
@@ -192,6 +197,7 @@ int main(int argc, char *argv[]) {
         unsetenv("KO_BOOKS_HOME");
         unsetenv("KO_HARDENED_OFFLINE");
         unsetenv("SDL_FULLSCREEN");
+        unsetenv("SDL_IOS_HIDE_HOME_INDICATOR");
         unsetenv("SDL_TOUCH_MOUSE_EVENTS");
         unsetenv("KO_IOS");
         return retval;

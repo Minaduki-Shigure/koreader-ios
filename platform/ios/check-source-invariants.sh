@@ -6,6 +6,7 @@ PLATFORM_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${PLATFORM_DIR}/../.." && pwd)"
 LOADER="${PLATFORM_DIR}/ios_loader.m"
 PICKER="${PLATFORM_DIR}/ios_filepicker.m"
+LIFECYCLE="${PLATFORM_DIR}/ios_lifecycle.c"
 APPEARANCE="${PLATFORM_DIR}/ios_system_appearance.m"
 PLIST="${PLATFORM_DIR}/Info.plist.in"
 PROJECT="${PLATFORM_DIR}/project.yml"
@@ -20,6 +21,7 @@ SDL3_CDECL="${REPO_ROOT}/base/ffi-cdecl/SDL3_decl.c"
 SDL3_HEADER="${REPO_ROOT}/base/ffi/SDL3_h.lua"
 SDL3_TOUCH_STATE="${REPO_ROOT}/base/ffi/sdl3_touch_state.lua"
 SDL3_INPUT="${REPO_ROOT}/base/ffi/input_SDL3.lua"
+SDL3_FRAMEBUFFER="${REPO_ROOT}/base/ffi/framebuffer_SDL3.lua"
 DEVICE="${REPO_ROOT}/frontend/device/sdl/device.lua"
 READER_UI="${REPO_ROOT}/frontend/apps/reader/readerui.lua"
 READER_CONFIG="${REPO_ROOT}/frontend/apps/reader/modules/readerconfig.lua"
@@ -115,7 +117,25 @@ require_source "${LOADER}" 'setenv("KO_HOME"'
 require_source "${LOADER}" 'setenv("KO_BOOKS_HOME"'
 require_source "${LOADER}" 'setenv("KO_HARDENED_OFFLINE", "1", 1)'
 require_source "${LOADER}" 'if (setenv("KO_IOS", "1", 1) != 0'
+require_source "${LOADER}" 'setenv("SDL_IOS_HIDE_HOME_INDICATOR", "0", 1)'
+require_source "${LOADER}" 'unsetenv("SDL_IOS_HIDE_HOME_INDICATOR")'
 reject_source "${LOADER}" 'NSDocumentDirectory'
+
+# Fullscreen SDL windows defer every iOS edge gesture unless told otherwise.
+# The Home Indicator swipe must belong to UIKit from its first contact. SDL's
+# mobile lifecycle events are watcher-only, so copy them into the regular
+# queue without recursively invoking the watcher.
+require_source "${LIFECYCLE}" 'SDL_AddEventWatch(ko_ios_lifecycle_event_watch, NULL)'
+require_source "${LIFECYCLE}" 'SDL_PeepEvents(&queued, 1, SDL_ADDEVENT, 0, 0)'
+require_source "${LIFECYCLE}" 'SDL_EVENT_WILL_ENTER_BACKGROUND'
+require_source "${LIFECYCLE}" 'SDL_EVENT_DID_ENTER_FOREGROUND'
+require_source "${LIFECYCLE}" 'SDL_RemoveEventWatch(ko_ios_lifecycle_event_watch, NULL)'
+require_source "${PROJECT}" 'platform/ios/ios_lifecycle.c'
+require_source "${PROJECT}" '-Wl,-exported_symbol,_ko_ios_lifecycle_start'
+require_source "${PROJECT}" '-Wl,-exported_symbol,_ko_ios_lifecycle_stop'
+require_source "${BUNDLER}" '"${PLATFORM_DIR}/ios_lifecycle.c"'
+require_source "${BUNDLER}" '-Wl,-exported_symbol,_ko_ios_lifecycle_start'
+require_source "${BUNDLER}" '-Wl,-exported_symbol,_ko_ios_lifecycle_stop'
 
 # The picker supports bounded file batches and whole folders, but only as
 # private copies. It never persists an external capability and does all
@@ -207,6 +227,11 @@ require_source "${SDL3}" 'code = tonumber(event.user.code)'
 require_source "${SDL3}" 'SDL.SDL_SetEventEnabled(SDL.SDL_EVENT_PINCH_BEGIN, false)'
 require_source "${SDL3}" 'SDL.SDL_SetEventEnabled(SDL.SDL_EVENT_PINCH_UPDATE, false)'
 require_source "${SDL3}" 'SDL.SDL_SetEventEnabled(SDL.SDL_EVENT_PINCH_END, false)'
+require_source "${SDL3}" 'bool ko_ios_lifecycle_start(void);'
+require_source "${SDL3}" 'void ko_ios_lifecycle_stop(void);'
+require_source "${SDL3}" 'if not C.ko_ios_lifecycle_start() then'
+require_source "${SDL3}" 'or event.type == SDL.SDL_EVENT_DID_ENTER_FOREGROUND'
+require_source "${SDL3_FRAMEBUFFER}" 'SDL.stopIOSLifecycle()'
 require_source "${SDL3_CDECL}" 'cdecl_func(SDL_SetEventEnabled)'
 require_source "${SDL3_HEADER}" 'void SDL_SetEventEnabled(Uint32, bool);'
 require_source "${SDL3}" 'finger_action = touch_state:onCancel'
@@ -240,7 +265,9 @@ reject_source "${READER_MENU}" 'self.ui.font:saveGlobalStyleFont()'
 require_source "${READER_GLOBAL_STYLE}" 'setting_name = "ios_global_reading_style"'
 require_source "${READER_GLOBAL_STYLE}" 'cjk_width_scaling = true'
 require_source "${READER_GLOBAL_STYLE}" 'font_size = true'
+require_source "${READER_GLOBAL_STYLE}" 'status_line = true'
 require_source "${READER_GLOBAL_STYLE}" 'word_spacing = true'
+require_source "${READER_GLOBAL_STYLE}" 'if not settings:has(setting_key) then'
 reject_source "${READER_GLOBAL_STYLE}" 'block_rendering_mode = true'
 reject_source "${READER_GLOBAL_STYLE}" 'embedded_css = true'
 reject_source "${READER_GLOBAL_STYLE}" 'view_mode = true'
@@ -257,6 +284,25 @@ touch_down_line="$(grep -nF 'finger_action, finger_slot = touch_state:onDown(' "
 if [ -z "${safe_area_filter_line}" ] || [ -z "${touch_down_line}" ] \
         || [ "${safe_area_filter_line}" -ge "${touch_down_line}" ]; then
     echo "error: iOS safe-area contacts must be rejected before allocating a touch slot" >&2
+    exit 1
+fi
+
+lifecycle_stop_line="$(grep -nF 'SDL.stopIOSLifecycle()' "${SDL3_FRAMEBUFFER}" | head -n1 | cut -d: -f1)"
+sdl_quit_line="$(grep -nF 'SDL.SDL.SDL_Quit()' "${SDL3_FRAMEBUFFER}" | head -n1 | cut -d: -f1)"
+if [ -z "${lifecycle_stop_line}" ] || [ -z "${sdl_quit_line}" ] \
+        || [ "${lifecycle_stop_line}" -ge "${sdl_quit_line}" ]; then
+    echo "error: iOS lifecycle watch must stop before SDL quits" >&2
+    exit 1
+fi
+
+lifecycle_init_line="$(grep -nF 'SDL.SDL_Init(bit.bor(' "${SDL3}" | head -n1 | cut -d: -f1)"
+lifecycle_start_line="$(grep -nF 'if not C.ko_ios_lifecycle_start() then' "${SDL3}" | head -n1 | cut -d: -f1)"
+window_create_line="$(grep -nF 'S.screen = SDL.SDL_CreateWindow(' "${SDL3}" | head -n1 | cut -d: -f1)"
+if [ -z "${lifecycle_init_line}" ] || [ -z "${lifecycle_start_line}" ] \
+        || [ -z "${window_create_line}" ] \
+        || [ "${lifecycle_init_line}" -ge "${lifecycle_start_line}" ] \
+        || [ "${lifecycle_start_line}" -ge "${window_create_line}" ]; then
+    echo "error: iOS lifecycle watch must start after SDL init and before window creation" >&2
     exit 1
 fi
 

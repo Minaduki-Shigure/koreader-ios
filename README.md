@@ -40,12 +40,15 @@
 > TXT multitouch is deliberately cancelled at the SDL input boundary on iOS;
 > use the font-size controls instead of pinch resizing. Other document types
 > retain their normal multitouch gestures.
-> Touches that start in the non-rendered iOS safe-area bezel, including the
-> Home Indicator region, are reserved for system gestures and do not enter
-> KOReader. Start a bottom-menu swipe immediately above that region.
+> Fullscreen iOS builds do not defer Home Indicator gestures: horizontal app
+> switching belongs to the system from the first contact. Touches that start
+> in the non-rendered safe-area bezel remain outside KOReader, and lifecycle
+> transitions cancel any incomplete touch sequence. Start a bottom-menu swipe
+> immediately above the system region.
 > Reflowable documents offer an opt-in **Global reading style** under
-> **Document settings**. It synchronizes reviewed typography and margin values
-> while leaving progress, annotations, CSS, view mode, and PDF settings local.
+> **Document settings**. It synchronizes reviewed typography, margins, and the
+> alternative top status bar visibility while leaving progress, annotations,
+> CSS, view mode, and PDF settings local.
 > In night mode, MuPDF documents (including the default PNG handler) honor the
 > per-document **Invert Document** control, which is shown only while night mode
 > is active. The non-configurable Picture Document provider keeps its iOS

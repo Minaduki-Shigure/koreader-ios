@@ -39,7 +39,7 @@ jobs:
       IOS_PLATFORM: iphoneos
       PARALLEL_JOBS: "4"
       AUDITED_PARENT_BASE: 9192014d8bd82a91dc1012473be0f238dedfdb54
-      PINNED_BASE_COMMIT: 6c10099a10a6038806ac316e27a2639f47b0dfa3
+      PINNED_BASE_COMMIT: 3846d520deef789bfc9cfa546240f3380eaddcdc
       DERIVED_DATA: build/DerivedData
 
     steps:
@@ -389,6 +389,8 @@ jobs:
             _ko_ios_get_safe_area_pixels \
             _ko_ios_import_document_poll \
             _ko_ios_import_document_start \
+            _ko_ios_lifecycle_start \
+            _ko_ios_lifecycle_stop \
             _ko_ios_system_appearance_current \
             _ko_ios_system_appearance_event_type \
             _ko_ios_system_appearance_start \

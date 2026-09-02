@@ -74,6 +74,8 @@ xcrun --sdk "${IOS_PLATFORM}" clang \
     -Wl,-exported_symbol,_ko_ios_import_document_start \
     -Wl,-exported_symbol,_ko_ios_import_document_poll \
     -Wl,-exported_symbol,_ko_ios_get_safe_area_pixels \
+    -Wl,-exported_symbol,_ko_ios_lifecycle_start \
+    -Wl,-exported_symbol,_ko_ios_lifecycle_stop \
     -Wl,-exported_symbol,_ko_ios_system_appearance_current \
     -Wl,-exported_symbol,_ko_ios_system_appearance_event_type \
     -Wl,-exported_symbol,_ko_ios_system_appearance_start \
@@ -81,6 +83,7 @@ xcrun --sdk "${IOS_PLATFORM}" clang \
     -o "${APP_BUNDLE}/KOReader" \
     "${PLATFORM_DIR}/ios_loader.m" \
     "${PLATFORM_DIR}/ios_filepicker.m" \
+    "${PLATFORM_DIR}/ios_lifecycle.c" \
     "${PLATFORM_DIR}/ios_system_appearance.m"
 
 # 2) Copy assets.
