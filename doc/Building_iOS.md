@@ -341,6 +341,16 @@ upstream KOReader tag.
   drains a complete multitouch sequence before KOReader can dispatch a TXT
   font-size gesture. Use KOReader's font-size controls instead. Multitouch in
   other document types remains available.
+- **Global reading style is opt-in.** In a reflowable document, open the top
+  menu, then **Settings -> Document settings -> Global reading style**. Enabling
+  it copies the current font, typography, and margin values into a reviewed
+  global whitelist. Existing per-document style values are preserved and
+  become active again if the option is disabled. PDF/Kopt settings, reading
+  progress, bookmarks, annotations, CSS, and view mode remain document-local.
+- **Chinese TXT spacing uses CJK width scaling.** Word spacing only changes
+  actual space characters, while word expansion applies to justified Western
+  words. For continuous Chinese text, use the CJK width controls shown directly
+  in the TXT font-size panel; presets cover 100-110%, with fine tuning to 150%.
 - **Simulator builds are untested.** The `IOS_PLATFORM=iphonesimulator`
   parameter exists in `make/ios.mk` but `base/` would need to be
   rebuilt against the simulator SDK — we haven't wired up an XCFramework.

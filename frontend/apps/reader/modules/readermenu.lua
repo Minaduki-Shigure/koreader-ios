@@ -219,6 +219,33 @@ function ReaderMenu:setUpdateItemTable()
         },
     }
 
+    if self.ui.rolling and self.ui.config and self.ui.config:isGlobalStyleAvailable() then
+        table.insert(self.menu_items.document_settings.sub_item_table, 1, {
+            text = _("Global reading style"),
+            checked_func = function()
+                return self.ui.config:isGlobalStyleEnabled()
+            end,
+            keep_menu_open = true,
+            separator = true,
+            callback = function()
+                local config = self.ui.config
+                if config:isGlobalStyleEnabled() then
+                    local current_file = self.ui.document.file
+                    self:onTapCloseMenu()
+                    self.ui:onClose()
+                    config:setGlobalStyleEnabled(false)
+                    require("apps/reader/readerui"):showReader(current_file)
+                else
+                    config:setGlobalStyleEnabled(true)
+                    UIManager:show(require("ui/widget/notification"):new{
+                        text = _("Default settings updated"),
+                    })
+                end
+            end,
+            help_text = _([[When enabled, font, spacing, margins, and font rendering settings are shared across reflowable documents. Reading progress, bookmarks, annotations, document CSS, and view mode remain document-specific.]]),
+        })
+    end
+
     if not Device:isTouchDevice() then
         -- This menu entry is a duplicate of the one found in page_turns for touch devices
         -- but we need to add it here for non-touch devices.

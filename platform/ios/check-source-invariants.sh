@@ -22,6 +22,11 @@ SDL3_TOUCH_STATE="${REPO_ROOT}/base/ffi/sdl3_touch_state.lua"
 SDL3_INPUT="${REPO_ROOT}/base/ffi/input_SDL3.lua"
 DEVICE="${REPO_ROOT}/frontend/device/sdl/device.lua"
 READER_UI="${REPO_ROOT}/frontend/apps/reader/readerui.lua"
+READER_CONFIG="${REPO_ROOT}/frontend/apps/reader/modules/readerconfig.lua"
+READER_FONT="${REPO_ROOT}/frontend/apps/reader/modules/readerfont.lua"
+READER_MENU="${REPO_ROOT}/frontend/apps/reader/modules/readermenu.lua"
+READER_GLOBAL_STYLE="${REPO_ROOT}/frontend/apps/reader/readerglobalstyle.lua"
+CRE_OPTIONS="${REPO_ROOT}/frontend/ui/data/creoptions.lua"
 PIC_DOCUMENT="${REPO_ROOT}/frontend/document/picdocument.lua"
 KOPT_INTERFACE="${REPO_ROOT}/frontend/document/koptinterface.lua"
 FILE_MANAGER="${REPO_ROOT}/frontend/apps/filemanager/filemanager.lua"
@@ -217,6 +222,24 @@ require_source "${DEVICE}" 'device_input:resetState()'
 require_source "${READER_UI}" 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)'
 require_source "${READER_UI}" 'Input:setMultitouchSuppressed(false)'
 require_source "${READER_UI}" 'file_type == "txt" or file_type == "txt.zip"'
+reject_source "${READER_FONT}" 'if size == self.configurable.font_size then return true end'
+require_source "${READER_FONT}" 'self.ui.document:setFontSize(Screen:scaleBySize(size))'
+require_source "${READER_CONFIG}" 'ReaderGlobalStyle:loadDocumentSettings'
+require_source "${READER_CONFIG}" 'ReaderGlobalStyle:saveSettings'
+require_source "${READER_CONFIG}" 'ReaderGlobalStyle:detachCurrentStyle'
+require_source "${READER_CONFIG}" 'return Device:isIOS() and self.options == CreOptions'
+require_source "${READER_CONFIG}" 'self.ui.font:saveGlobalStyleFont()'
+require_source "${READER_MENU}" 'text = _("Global reading style")'
+reject_source "${READER_MENU}" 'self.ui.font:saveGlobalStyleFont()'
+require_source "${READER_GLOBAL_STYLE}" 'setting_name = "ios_global_reading_style"'
+require_source "${READER_GLOBAL_STYLE}" 'cjk_width_scaling = true'
+require_source "${READER_GLOBAL_STYLE}" 'font_size = true'
+require_source "${READER_GLOBAL_STYLE}" 'word_spacing = true'
+reject_source "${READER_GLOBAL_STYLE}" 'block_rendering_mode = true'
+reject_source "${READER_GLOBAL_STYLE}" 'embedded_css = true'
+reject_source "${READER_GLOBAL_STYLE}" 'view_mode = true'
+require_source "${CRE_OPTIONS}" 'return Device:isIOS() and document and document.is_txt == true'
+require_source "${CRE_OPTIONS}" 'toggle = { "100%", "105%", "110%" }'
 require_source "${PIC_DOCUMENT}" 'target:invertRect(x, y, rect.w, rect.h)'
 require_source "${KOPT_INTERFACE}" 'function KoptInterface:isIOSStandaloneImage(doc)'
 require_source "${KOPT_INTERFACE}" 'if os.getenv("KO_IOS") ~= "1" then return false end'

@@ -1,13 +1,15 @@
 describe("ReaderFont gesture sizing", function()
-    local Device, Notification, ReaderFont, Screen, UIManager
+    local CreOptions, Device, Notification, ReaderCoptListener, ReaderFont, Screen, UIManager
     local original_device_input
     local scheduled
 
     setup(function()
         require("commonrequire")
         disable_plugins()
+        CreOptions = require("ui/data/creoptions")
         Device = require("device")
         Notification = require("ui/widget/notification")
+        ReaderCoptListener = require("apps/reader/modules/readercoptlistener")
         ReaderFont = require("apps/reader/modules/readerfont")
         Screen = Device.screen
         UIManager = require("ui/uimanager")
@@ -20,6 +22,10 @@ describe("ReaderFont gesture sizing", function()
         original_device_input = Device.input
         Device.input = { gesture_detector = { contact_count = 0 } }
         stub(Notification, "notify")
+        stub(G_reader_settings, "readSetting", function(_, key)
+            if key == "cre_font" then return "Global Font" end
+        end)
+        stub(G_reader_settings, "saveSetting")
         stub(UIManager, "scheduleIn", function(_, delay, action)
             table.insert(scheduled, { delay = delay, action = action })
         end)
@@ -30,18 +36,25 @@ describe("ReaderFont gesture sizing", function()
         Device.isIOS:revert()
         Device.input = original_device_input
         Notification.notify:revert()
+        G_reader_settings.readSetting:revert()
+        G_reader_settings.saveSetting:revert()
         UIManager.scheduleIn:revert()
         UIManager.unschedule:revert()
     end)
 
     local function newReaderFont()
         local document = {
+            setCJKWidthScaling = spy.new(function() end),
             setFontSize = spy.new(function() end),
         }
         local font = {
-            configurable = { font_size = 20 },
+            configurable = { cjk_width_scaling = 100, font_size = 20 },
+            font_face = "Noto Sans CJK SC",
+            font_family_fonts = {},
             steps = ReaderFont.steps,
             ui = {
+                config = { isGlobalStyleEnabled = function() return false end },
+                doc_settings = { saveSetting = spy.new(function() end) },
                 document = document,
                 handleEvent = spy.new(function() end),
             },
@@ -64,14 +77,87 @@ describe("ReaderFont gesture sizing", function()
         }))
     end)
 
-    it("does not rerender when the computed font size is unchanged", function()
+    it("does not rerender for a zero font-size delta", function()
         local font, document = newReaderFont()
 
         font:onChangeSize(0)
-        font:onSetFontSize(20)
 
         assert.spy(document.setFontSize).was.called(0)
         assert.spy(font.ui.handleEvent).was.called(0)
+    end)
+
+    it("applies a preset after ConfigChange updated the shared value", function()
+        local font, document = newReaderFont()
+        local listener = setmetatable({
+            document = { configurable = font.configurable },
+            ui = { handleEvent = spy.new(function() end) },
+        }, { __index = ReaderCoptListener })
+
+        listener:onConfigChange("font_size", 24)
+
+        font:onSetFontSize(24)
+
+        assert.are.equal(24, font.configurable.font_size)
+        assert.spy(document.setFontSize).was_called_with(document, Screen:scaleBySize(24))
+        assert.spy(font.ui.handleEvent).was.called(1)
+    end)
+
+    it("applies CJK width scaling and requests a reflow", function()
+        local font, document = newReaderFont()
+
+        font:onSetCJKWidthScaling(110)
+
+        assert.are.equal(110, font.configurable.cjk_width_scaling)
+        assert.spy(document.setCJKWidthScaling).was_called_with(document, 110)
+        assert.spy(font.ui.handleEvent).was.called(1)
+    end)
+
+    it("shows direct CJK spacing controls for iOS plain text", function()
+        local cjk_option
+        for _, tab in ipairs(CreOptions) do
+            for _, option in ipairs(tab.options) do
+                if option.name == "cjk_width_scaling" then
+                    cjk_option = option
+                    break
+                end
+            end
+        end
+
+        assert.is_not_nil(cjk_option)
+        assert.is_true(cjk_option.show_func({}, { is_txt = true }))
+        assert.is_false(cjk_option.show_func({}, { is_txt = false }))
+        assert.same({ 100, 105, 110 }, cjk_option.values)
+        assert.are.equal(100, cjk_option.more_options_param.value_min)
+        assert.are.equal(150, cjk_option.more_options_param.value_max)
+    end)
+
+    it("saves the font globally without overwriting the document font", function()
+        local font = newReaderFont()
+        font.ui.config.isGlobalStyleEnabled = function() return true end
+
+        font:onSaveSettings()
+
+        assert.stub(G_reader_settings.saveSetting).was.called(1)
+        local global_call = G_reader_settings.saveSetting.calls[1].vals
+        assert.are.equal("cre_font", global_call[2])
+        assert.are.equal("Noto Sans CJK SC", global_call[3])
+        for _, call in ipairs(font.ui.doc_settings.saveSetting.calls) do
+            assert.are_not.equal("font_face", call.vals[2])
+        end
+    end)
+
+    it("prefers the global font only while global style is enabled", function()
+        local font = newReaderFont()
+        local document_settings = {
+            readSetting = function(_, key)
+                if key == "font_face" then return "Document Font" end
+            end,
+        }
+
+        assert.are.equal("Document Font", font:_getFontFace(document_settings))
+
+        font.ui.config.isGlobalStyleEnabled = function() return true end
+        assert.are.equal("Global Font", font:_getFontFace(document_settings))
     end)
 
     it("defers and coalesces iOS gesture changes until input can drain", function()

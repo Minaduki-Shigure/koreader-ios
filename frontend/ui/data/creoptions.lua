@@ -510,7 +510,7 @@ Note that your selected font size is not affected by this setting.]]),
                     name_text = _("Max word expansion"),
                     info_text = _([[Set max word expansion as a percentage of the font size.]]),
                     event = "SetWordExpansion",
-                    other_button = { -- allow fine tuning the hidden cjk_width_scaling option (defined below)
+                    other_button = { -- allow jumping directly to CJK width fine tuning
                         text = _("CJK scaling"),
                         other_option = "cjk_width_scaling",
                     }
@@ -536,14 +536,17 @@ Note that your selected font size is not affected by this setting.]]),
                 end,
             },
             {   -- ReaderFont
-                -- This option is not shown in the bottom menu, but its fine tuning is made
-                -- available via the other_button in Word Expansion's fine tuning widget.
-                -- We still need to define it as an option here for it to be known and
-                -- handled as any other one - we just make it hidden.
-                show = false,
+                -- Keep this direct control focused on iOS plain-text reading;
+                -- it remains reachable from Word Expansion's fine tuning elsewhere.
+                show_func = function(_, document)
+                    return Device:isIOS() and document and document.is_txt == true
+                end,
                 name = "cjk_width_scaling",
+                name_text = _("CJK width scaling"),
                 default_value = 100,
-                values = { 100, 105, 110 }, -- (not shown)
+                toggle = { "100%", "105%", "110%" },
+                values = { 100, 105, 110 },
+                args = { 100, 105, 110 },
                 event = "SetCJKWidthScaling",
                 more_options = true,
                 more_options_param = {
@@ -561,6 +564,11 @@ Note that your selected font size is not affected by this setting.]]),
                         other_option = "word_expansion",
                     }
                 },
+                name_text_hold_callback = optionsutil.showValues,
+                name_text_true_values = true,
+                show_true_value_func = function(val)
+                    return string.format("%d\u{202F}%%", val)
+                end,
             },
         }
     },

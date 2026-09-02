@@ -166,10 +166,15 @@ function ReaderFont:onSetDimensions(dimen)
     self.dimen = dimen
 end
 
+function ReaderFont:_getFontFace(config)
+    local document_font_face = not self:_usesGlobalStyle() and config:readSetting("font_face")
+    return document_font_face
+        or G_reader_settings:readSetting("cre_font")
+        or self.ui.document.default_font
+end
+
 function ReaderFont:onReadSettings(config)
-    self.font_face = config:readSetting("font_face")
-                  or G_reader_settings:readSetting("cre_font")
-                  or self.ui.document.default_font
+    self.font_face = self:_getFontFace(config)
     self.ui.document:setFontFace(self.font_face)
 
     local header_font = G_reader_settings:readSetting("header_font") or self.ui.document.header_font
@@ -210,7 +215,6 @@ end
 
 function ReaderFont:onSetFontSize(size)
     size = math.max(12, math.min(size, 255))
-    if size == self.configurable.font_size then return true end
     self.configurable.font_size = size
     self.ui.document:setFontSize(Screen:scaleBySize(size))
     self.ui:handleEvent(Event:new("UpdatePos"))
@@ -285,8 +289,20 @@ function ReaderFont:onSetFontGamma(gamma)
 end
 
 function ReaderFont:onSaveSettings()
-    self.ui.doc_settings:saveSetting("font_face", self.font_face)
+    if self:_usesGlobalStyle() then
+        self:saveGlobalStyleFont()
+    else
+        self.ui.doc_settings:saveSetting("font_face", self.font_face)
+    end
     self.ui.doc_settings:saveSetting("font_family_fonts", self.font_family_fonts)
+end
+
+function ReaderFont:_usesGlobalStyle()
+    return self.ui.config and self.ui.config:isGlobalStyleEnabled()
+end
+
+function ReaderFont:saveGlobalStyleFont()
+    G_reader_settings:saveSetting("cre_font", self.font_face)
 end
 
 function ReaderFont:onSetFont(face)
@@ -295,6 +311,9 @@ function ReaderFont:onSetFont(face)
             if fontinfo[1].name == face then
                 self.font_face = face
                 self.ui.document:setFontFace(face)
+                if self:_usesGlobalStyle() then
+                    self:saveGlobalStyleFont()
+                end
                 -- signal readerrolling to update pos in new height
                 self.ui:handleEvent(Event:new("UpdatePos"))
                 return

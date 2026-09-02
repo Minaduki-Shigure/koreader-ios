@@ -185,6 +185,7 @@ jobs:
           for spec in \
             spec/front/unit/safesettings_spec.lua \
             spec/front/unit/readerfont_spec.lua \
+            spec/front/unit/readerglobalstyle_spec.lua \
             spec/front/unit/ios_system_appearance_spec.lua \
             spec/front/unit/sdl3_touch_state_spec.lua \
             spec/front/unit/sdl_touch_cancel_spec.lua \
@@ -214,6 +215,7 @@ jobs:
             artifacts/logs/build-front-test-host.log
             artifacts/logs/safesettings.log
             artifacts/logs/readerfont.log
+            artifacts/logs/readerglobalstyle.log
             artifacts/logs/ios_system_appearance.log
             artifacts/logs/sdl3_touch_state.log
             artifacts/logs/sdl_touch_cancel.log

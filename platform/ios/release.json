@@ -1,8 +1,8 @@
 {
-  "marketingVersion": "2026.7.5",
-  "buildVersion": "6",
-  "releaseTag": "ios-v2026.7.5-b6",
+  "marketingVersion": "2026.7.6",
+  "buildVersion": "7",
+  "releaseTag": "ios-v2026.7.6-b7",
   "upstreamTag": "v2026.07.1",
   "channel": "beta",
-  "localizedDescription": "KOReader 2026.7.5 严格离线 iOS 测试版：保持 2026.7.4 已验证的文件选择器与多文件导入路径不变；在 SDL 输入边界禁用未使用的原生缩放事件，并在 TXT 阅读中于第二个触点出现时取消并排空完整多指序列，避免触点状态或同步全文重排导致界面卡死。TXT 字号仍请使用菜单调整。独立 PNG 及其他图片现在会在夜间模式中进行渲染层预反色，以抵消最终帧缓冲反色并保留原始颜色；该规则也覆盖已经保存旧 sidecar 的图片。LiveContainer 使用前仍需启用 Fix File Picker。"
+  "localizedDescription": "KOReader 2026.7.6 严格离线 iOS 测试版：保持 2026.7.5 已验证的 TXT 多触控隔离、夜间 PNG 原色显示以及 2026.7.4 文件选择器不变；修复数字字号快捷项只更新后台数值但不触发前台重排的问题。新增可选的全局阅读样式，只在流式文档间同步字体、字号、间距、页边距和字体渲染参数，并保留每本书原有样式以便关闭后恢复；PDF、进度、书签、批注、CSS 和视图模式不受影响。iOS TXT 排版面板现在直接显示 100% 至 110% 的 CJK 字宽快捷设置，并可精调至 150%，用于连续中文字符间距。LiveContainer 使用前仍需启用 Fix File Picker。"
 }

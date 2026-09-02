@@ -2,6 +2,7 @@ local ConfigDialog = require("ui/widget/configdialog")
 local Device = require("device")
 local Event = require("ui/event")
 local InputContainer = require("ui/widget/container/inputcontainer")
+local ReaderGlobalStyle = require("apps/reader/readerglobalstyle")
 local UIManager = require("ui/uimanager")
 local CreOptions = require("ui/data/creoptions")
 local KoptOptions = require("ui/data/koptoptions")
@@ -18,6 +19,9 @@ function ReaderConfig:init()
         self.options = CreOptions
     end
     self.configurable:loadDefaults(self.options)
+    if self:isGlobalStyleEnabled() then
+        ReaderGlobalStyle:detachCurrentStyle(self.configurable)
+    end
 
     self:registerKeyEvents()
     self:initGesListener()
@@ -32,6 +36,33 @@ function ReaderConfig:init()
 end
 
 function ReaderConfig:onGesture() end
+
+function ReaderConfig:isGlobalStyleAvailable()
+    return Device:isIOS() and self.options == CreOptions
+end
+
+function ReaderConfig:isGlobalStyleEnabled()
+    return self:isGlobalStyleAvailable() and ReaderGlobalStyle:isEnabled()
+end
+
+function ReaderConfig:setGlobalStyleEnabled(enabled)
+    if not self:isGlobalStyleAvailable() then return false end
+    if enabled then
+        ReaderGlobalStyle:detachCurrentStyle(self.configurable)
+        ReaderGlobalStyle:saveCurrentStyle(self.configurable, self.options.prefix .. "_")
+        self.ui.font:saveGlobalStyleFont()
+    end
+    ReaderGlobalStyle:setEnabled(enabled)
+    G_reader_settings:flush()
+    return true
+end
+
+function ReaderConfig:onConfigChange(option_name, option_value)
+    if self:isGlobalStyleEnabled() then
+        ReaderGlobalStyle:saveStyleSetting(
+            option_name, option_value, self.options.prefix .. "_")
+    end
+end
 
 function ReaderConfig:registerKeyEvents()
     if Device:hasKeys() then
@@ -181,7 +212,12 @@ function ReaderConfig:onCloseConfigMenu()
 end
 
 function ReaderConfig:onReadSettings(config)
-    self.configurable:loadSettings(config, self.options.prefix.."_")
+    local prefix = self.options.prefix .. "_"
+    if self:isGlobalStyleEnabled() then
+        ReaderGlobalStyle:loadDocumentSettings(self.configurable, config, prefix)
+    else
+        self.configurable:loadSettings(config, prefix)
+    end
     local config_panel_index = config:readSetting("config_panel_index")
     if config_panel_index then
         config_panel_index = math.min(config_panel_index, #self.options)
@@ -190,7 +226,12 @@ function ReaderConfig:onReadSettings(config)
 end
 
 function ReaderConfig:onSaveSettings()
-    self.configurable:saveSettings(self.ui.doc_settings, self.options.prefix.."_")
+    local prefix = self.options.prefix .. "_"
+    if self:isGlobalStyleEnabled() then
+        ReaderGlobalStyle:saveSettings(self.configurable, self.ui.doc_settings, prefix)
+    else
+        self.configurable:saveSettings(self.ui.doc_settings, prefix)
+    end
     self.ui.doc_settings:saveSetting("config_panel_index", self.last_panel_index)
 end
 
