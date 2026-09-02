@@ -30,13 +30,26 @@ credentials. SideStore signs that IPA using the account configured on the
 device. Direct Xcode installation is also supported: select a free personal
 team or a paid Apple Developer team under **Signing & Capabilities**.
 
-### Published SideStore / LiveContainer source
+### Published SideStore / LiveContainer sources
 
-The maintained source URL is:
+The promoted source URL is:
 
 ```text
 https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-release/sidestore-source.json
 ```
+
+Candidates awaiting device validation are published separately:
+
+```text
+https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-testing/sidestore-source.json
+```
+
+Both sources use the same KOReader bundle identifier. Installing a testing
+candidate therefore updates the existing app in place and uses its existing app
+container; it does not install a second copy. Testing candidates may contain
+regressions. Each candidate must increase both the three-component
+`marketingVersion` and `buildVersion` so SideStore and LiveContainer can select
+the new first entry reliably.
 
 In LiveContainer 3.7 or newer, open **Sources**, add the URL, and install
 KOReader from that listing. This imports KOReader as a LiveContainer guest. A
@@ -52,6 +65,12 @@ standalone sideloaded app. The corresponding SideStore shortcut is:
 
 ```text
 sidestore://source?url=https%3A%2F%2Fraw.githubusercontent.com%2FMinaduki-Shigure%2Fkoreader-ios%2Frefs%2Fheads%2Fios-release%2Fsidestore-source.json
+```
+
+The testing-source shortcut is:
+
+```text
+sidestore://source?url=https%3A%2F%2Fraw.githubusercontent.com%2FMinaduki-Shigure%2Fkoreader-ios%2Frefs%2Fheads%2Fios-testing%2Fsidestore-source.json
 ```
 
 The Release IPA is intentionally unsigned. Do not pre-sign or patch it before
@@ -199,7 +218,7 @@ the same device build and uploads the unsigned IPA together with its SHA-256
 and validation evidence. Packaging happens only after the source and final app
 bundle satisfy the strict-offline checks.
 
-## Publishing a source release
+## Publishing testing and promoted source releases
 
 `platform/ios/release.json` is the single source of truth for the public app
 version, build number, release notes, and iOS release tag; it also records the
@@ -210,26 +229,34 @@ to **Read and write permissions**. Immutability only applies to releases made
 after that repository setting is enabled, and the workflow refuses to add a
 mutable Release to the source.
 
-To prepare a new release:
+To prepare and device-test a new release:
 
 1. Start from the current `ios-release` branch after its latest source update.
 2. Update every field in `platform/ios/release.json`. Both
    `marketingVersion` and the positive integer `buildVersion` must increase.
 3. Commit and push the candidate, then wait for the full macOS and iOS workflows
    to pass.
-4. Tag that exact commit with the `releaseTag` from the metadata and push the
-   tag. Do not reuse or move a published tag.
+4. Tag that exact commit with
+   `ios-test-v<marketingVersion>-b<buildVersion>` and push the tag. The tag
+   workflow rebuilds and validates the IPA, creates an immutable GitHub
+   prerelease, and publishes it only to the `ios-testing` source.
+5. Install from the testing source and complete device validation. If the
+   candidate fails, increase both versions before publishing another candidate.
+6. Only after validation, tag the accepted commit with the `releaseTag` from
+   the metadata and push that formal tag. Do not reuse or move any published
+   testing or formal tag.
 
 For an iOS-only maintenance release on the same audited upstream base, these
 metadata fields are sufficient. Upgrading the upstream KOReader version also
 requires a fresh audit and updates to `IOS_UPSTREAM_TAG`,
 `AUDITED_PARENT_BASE`, and `PINNED_BASE_COMMIT` in the workflows.
 
-The tag workflow builds and validates the unsigned IPA, creates a draft GitHub
-Release, verifies the uploaded asset's byte size and SHA-256, publishes the
-Release, and only then appends the version to `sidestore-source.json`. The final
-job fetches both public URLs and repeats the size and digest checks. A failed
-build or incomplete Release therefore cannot become the latest source entry.
+Both tag paths build and validate the unsigned IPA, create a draft GitHub
+Release, verify the uploaded asset's byte size and SHA-256, publish the Release,
+and only then append the version to the selected source. Testing tags update
+only `ios-testing`; formal tags update only `ios-release`. The final job fetches
+both public URLs and repeats the size and digest checks. A failed build or
+incomplete Release therefore cannot become the latest entry in either source.
 
 Do not hand-edit published version entries or replace a Release asset. Classic
 AltSources identify updates using `CFBundleShortVersionString`, so every public
