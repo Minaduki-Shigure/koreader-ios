@@ -1576,7 +1576,13 @@ function Dispatcher:execute(settings, exec_props)
     if settings.settings and settings.settings.notify then
         Notification:notify(T(_("Executing profile: %1"), settings.settings.name))
     end
-    for k, v in Dispatcher.iter_func(settings, true) do
+    local iterator, state, control = Dispatcher.iter_func(settings, true)
+    if blocked_font_gesture and one_by_one_index_map and settings.settings
+            and settings.settings.execute_one_by_one and original_settings.settings then
+        original_settings.settings.execute_one_by_one =
+            one_by_one_index_map[settings.settings.execute_one_by_one]
+    end
+    for k, v in iterator, state, control do
         if type(k) == "number" then
             k = v
             v = settings[k]
@@ -1617,11 +1623,6 @@ function Dispatcher:execute(settings, exec_props)
                 UIManager:sendEvent(Event:new("KeyRelease", key))
             end
         end
-    end
-    if blocked_font_gesture and one_by_one_index_map and settings.settings
-            and settings.settings.execute_one_by_one and original_settings.settings then
-        original_settings.settings.execute_one_by_one =
-            one_by_one_index_map[settings.settings.execute_one_by_one]
     end
     Notification:resetNotifySource()
     if has_many then

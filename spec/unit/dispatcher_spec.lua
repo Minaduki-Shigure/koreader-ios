@@ -38,6 +38,7 @@ describe("Dispatcher runtime actions", function()
         local Device, Notification, ReaderUI, UIManager
         local original_reader_ui
         local sent_events
+        local actions_observed_during_event, expected_index_during_event
 
         before_each(function()
             Device = require("device")
@@ -51,10 +52,16 @@ describe("Dispatcher runtime actions", function()
                 gestures = {},
             }
             sent_events = {}
+            actions_observed_during_event = nil
+            expected_index_during_event = nil
             stub(Device, "isIOS")
             Device.isIOS.returns(true)
             stub(Notification, "notify")
             stub(UIManager, "sendEvent", function(_, event)
+                if actions_observed_during_event then
+                    assert.equals(expected_index_during_event,
+                        actions_observed_during_event.settings.execute_one_by_one)
+                end
                 table.insert(sent_events, event)
             end)
             stub(UIManager, "broadcastEvent")
@@ -107,12 +114,15 @@ describe("Dispatcher runtime actions", function()
                 },
             }
 
+            actions_observed_during_event = actions
+            expected_index_during_event = 2
             Dispatcher:execute(actions, { gesture = { ges = "pinch" } })
             assert.equals(1, #sent_events)
             assert.equals("onShowMenu", sent_events[1].handler)
             assert.equals(2, actions.settings.execute_one_by_one)
 
             sent_events = {}
+            expected_index_during_event = 3
             Dispatcher:execute(actions, { gesture = { ges = "pinch" } })
             assert.equals(1, #sent_events)
             assert.equals("onShowHist", sent_events[1].handler)
