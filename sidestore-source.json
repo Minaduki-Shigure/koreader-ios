@@ -19,6 +19,14 @@
       "tintColor": "#00AFA7",
       "versions": [
         {
+          "version": "2026.7.8",
+          "date": "2026-09-02",
+          "localizedDescription": "KOReader 2026.7.8 严格离线 iOS 测试版：修复阅读时从屏幕最下方主屏指示条安全区起手滑动后，触控可能永久失效的问题。SDL 输入桥现在会拦截起始于不可绘制安全区的系统手势，不再把它映射到阅读器底部配置区；旧触点即使缺失终止事件也只会被单独隔离，不再阻塞后续触摸。继续包含 2026.7.7 的夜间图片反转控制修复、全局阅读样式、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
+          "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.8-b9/KOReader-Strict-Offline-SideStore.ipa",
+          "size": 77872184,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2026.7.7",
           "date": "2026-09-02",
           "localizedDescription": "KOReader 2026.7.7 严格离线 iOS 测试版：修正 2026.7.5 对独立图片夜间模式的过度补偿。默认由 MuPDF 打开的 PNG、JPEG 等分页图片重新遵循每个文档的“反转文档”开关，不再按扩展名强制保留原色；没有配置面板的 Picture Document 路径仍保留 iOS 夜间原色兜底。继续包含 2026.7.6 的数字字号快捷渲染修复、可选全局阅读样式和中文 CJK 字宽设置，以及此前已验证的 TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
@@ -59,11 +67,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2026.7.7",
+      "version": "2026.7.8",
       "versionDate": "2026-09-02",
-      "versionDescription": "KOReader 2026.7.7 严格离线 iOS 测试版：修正 2026.7.5 对独立图片夜间模式的过度补偿。默认由 MuPDF 打开的 PNG、JPEG 等分页图片重新遵循每个文档的“反转文档”开关，不再按扩展名强制保留原色；没有配置面板的 Picture Document 路径仍保留 iOS 夜间原色兜底。继续包含 2026.7.6 的数字字号快捷渲染修复、可选全局阅读样式和中文 CJK 字宽设置，以及此前已验证的 TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
-      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.7-b8/KOReader-Strict-Offline-SideStore.ipa",
-      "size": 77871733
+      "versionDescription": "KOReader 2026.7.8 严格离线 iOS 测试版：修复阅读时从屏幕最下方主屏指示条安全区起手滑动后，触控可能永久失效的问题。SDL 输入桥现在会拦截起始于不可绘制安全区的系统手势，不再把它映射到阅读器底部配置区；旧触点即使缺失终止事件也只会被单独隔离，不再阻塞后续触摸。继续包含 2026.7.7 的夜间图片反转控制修复、全局阅读样式、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
+      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.8-b9/KOReader-Strict-Offline-SideStore.ipa",
+      "size": 77872184
     }
   ],
   "news": []
