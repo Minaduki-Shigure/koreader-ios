@@ -24,6 +24,11 @@
 > LiveContainer guest. Adding it to SideStore installs KOReader as a standalone
 > sideloaded app instead. The source targets arm64 devices running iOS/iPadOS
 > 14 or newer and is not an AltStore PAL notarized marketplace source.
+> Before importing books in the LiveContainer guest, open KOReader's app-specific
+> settings in LiveContainer and enable **Fix File Picker**. A LiveContainer guest
+> does not have the same OS-level container isolation as the standalone
+> SideStore installation; use the standalone installation when that boundary is
+> required.
 >
 > ```sh
 > make TARGET=ios xcodeproj
