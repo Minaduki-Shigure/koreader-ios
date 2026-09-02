@@ -38,7 +38,7 @@ jobs:
       IOS_PLATFORM: iphoneos
       PARALLEL_JOBS: "4"
       AUDITED_PARENT_BASE: 9192014d8bd82a91dc1012473be0f238dedfdb54
-      PINNED_BASE_COMMIT: f792885d1b361ff23c5fffc97e7f618202d41c3a
+      PINNED_BASE_COMMIT: 2739c5472de805a12e31ed2f9e90775f5e198f79
       DERIVED_DATA: build/DerivedData
 
     steps:
@@ -175,6 +175,7 @@ jobs:
           for spec in \
             spec/front/unit/safesettings_spec.lua \
             spec/front/unit/readerfont_spec.lua \
+            spec/front/unit/sdl_touch_cancel_spec.lua \
             spec/front/unit/ios_system_appearance_spec.lua; do
             "${host_make[@]}" testfront RUNTESTS="${targeted_runner}" T="${spec}" \
               2>&1 | tee "artifacts/logs/$(basename "${spec}" .lua).log"
@@ -269,7 +270,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c \
             'Print :UIFileSharingEnabled' "${plist}")" = "false"
           test "$(/usr/libexec/PlistBuddy -c \
-            'Print :LSSupportsOpeningDocumentsInPlace' "${plist}")" = "false"
+            'Print :LSSupportsOpeningDocumentsInPlace' "${plist}")" = "true"
 
           reject_plist_key() {
             local key="$1"

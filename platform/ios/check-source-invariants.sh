@@ -14,6 +14,7 @@ RELEASE_METADATA="${PLATFORM_DIR}/release.json"
 COVER_BROWSER="${REPO_ROOT}/plugins/coverbrowser.koplugin/bookinfomanager.lua"
 IMPORT_PLUGIN="${REPO_ROOT}/plugins/iosimporter.koplugin/main.lua"
 APPEARANCE_PLUGIN="${REPO_ROOT}/plugins/iossystemappearance.koplugin/main.lua"
+SDL_TOUCH_CANCEL_SPEC="${REPO_ROOT}/spec/unit/sdl_touch_cancel_spec.lua"
 PLUGIN_LOADER="${REPO_ROOT}/frontend/pluginloader.lua"
 SDL3="${REPO_ROOT}/base/ffi/SDL3.lua"
 DEVICE="${REPO_ROOT}/frontend/device/sdl/device.lua"
@@ -106,17 +107,16 @@ require_source "${LOADER}" 'setenv("KO_HARDENED_OFFLINE", "1", 1)'
 require_source "${LOADER}" 'if (setenv("KO_IOS", "1", 1) != 0'
 reject_source "${LOADER}" 'NSDocumentDirectory'
 
-# The picker supports bounded file batches and whole folders, but only as
-# private copies. It never persists an external capability and does all
-# provider I/O off the UIKit thread.
+# The picker opens security-scoped provider URLs transiently, then copies their
+# contents into the private library. It never persists an external capability
+# and does all provider I/O off the UIKit thread.
 require_source "${PICKER}" 'KO_IMPORT_SELECT_FILES'
 require_source "${PICKER}" 'KO_IMPORT_SELECT_FOLDERS'
-require_source "${PICKER}" '? @[UTTypeFolder]'
-require_source "${PICKER}" ': @[UTTypeData]'
+require_source "${PICKER}" 'BOOL selectsFiles = selectionMode == KO_IMPORT_SELECT_FILES;'
+require_source "${PICKER}" 'selectsFiles ? @[UTTypeData] : @[UTTypeFolder];'
 require_source "${PICKER}" 'initForOpeningContentTypes:contentTypes'
-require_source "${PICKER}" 'BOOL copySelection = selectionMode == KO_IMPORT_SELECT_FILES;'
-require_source "${PICKER}" 'asCopy:copySelection'
-require_source "${PICKER}" 'picker.allowsMultipleSelection = YES;'
+require_source "${PICKER}" 'asCopy:NO'
+require_source "${PICKER}" 'picker.allowsMultipleSelection = selectsFiles;'
 require_source "${PICKER}" 'picker.modalPresentationStyle = UIModalPresentationFullScreen;'
 require_source "${PICKER}" 'NSFileCoordinator'
 require_source "${PICKER}" 'NSFileCoordinatorReadingWithoutChanges'
@@ -141,7 +141,7 @@ require_source "${PICKER}" 'initWithUUIDString:uuidString'
 require_source "${PICKER}" 'NSURLIsExcludedFromBackupKey'
 require_source "${PICKER}" 'requireSecurityScope'
 require_source "${PICKER}" 'hasItemSecurityScope'
-require_source "${PICKER}" 'if (pickerCopiedSelection) {'
+require_source "${PICKER}" 'ko_copy_selection_to_books(sourceURLs, YES, &error);'
 require_source "${PICKER}" 'moveItemAtURL:stageURL'
 require_source "${PICKER}" 'moveItemAtURL:temporaryURL'
 require_source "${PICKER}" 'ko_ios_import_document_start'
@@ -149,7 +149,9 @@ require_source "${PICKER}" 'ko_ios_import_document_poll'
 require_source "${PICKER}" 'outImportedCount'
 require_source "${PICKER}" 'outSkippedCount'
 require_source "${PICKER}" 'outIsCollection'
-reject_source "${PICKER}" 'asCopy:NO'
+reject_source "${PICKER}" 'asCopy:YES'
+reject_source "${PICKER}" 'pickerCopiedSelection'
+reject_source "${PICKER}" 'copySelection'
 reject_source "${PICKER}" 'bookmarkData'
 reject_source "${PICKER}" 'URLByResolvingBookmarkData'
 reject_source "${PICKER}" '@"lua"'
@@ -193,18 +195,28 @@ reject_source "${APPEARANCE}" 'NSTimer'
 require_source "${SDL3}" 'event.type >= SDL.SDL_EVENT_USER'
 require_source "${SDL3}" 'event.type < SDL.SDL_EVENT_LAST'
 require_source "${SDL3}" 'code = tonumber(event.user.code)'
+require_source "${SDL3}" 'local function popFingerSlot(event)'
+require_source "${SDL3}" 'elseif event.type == SDL.SDL_EVENT_FINGER_CANCELED then'
+require_source "${SDL3}" 'finger_pointers = {}'
+require_source "${SDL3}" 'genEmuEvent(C.EV_SDL, SDL.SDL_EVENT_FINGER_CANCELED, nil)'
+require_source "${SDL3}" 'slot = popFingerSlot(event)'
+require_source "${DEVICE}" 'function Device:_handleSDLFingerCanceled(device_input)'
+require_source "${DEVICE}" 'device_input:resetState()'
+require_source "${DEVICE}" 'ev.code == SDL.SDL.SDL_EVENT_FINGER_CANCELED'
+require_source "${SDL_TOUCH_CANCEL_SPEC}" 'resets the complete frontend gesture state'
 require_source "${APPEARANCE_PLUGIN}" 'KO_HARDENED_OFFLINE'
 require_source "${APPEARANCE_PLUGIN}" 'ko_ios_system_appearance_start'
 require_source "${APPEARANCE_PLUGIN}" 'controller:syncCurrentAppearance()'
 reject_source "${APPEARANCE_PLUGIN}" 'scheduleIn('
 
-# No Files sharing, open-in-place provider paths, or document type argv entry.
+# Provider URLs may be opened in place only long enough to make a bounded
+# private copy. Files sharing and document-type argv entry remain disabled.
 if ! grep -A1 -F '<key>UIFileSharingEnabled</key>' "${PLIST}" | grep -Fq '<false/>'; then
     echo "error: UIFileSharingEnabled must be false" >&2
     exit 1
 fi
-if ! grep -A1 -F '<key>LSSupportsOpeningDocumentsInPlace</key>' "${PLIST}" | grep -Fq '<false/>'; then
-    echo "error: LSSupportsOpeningDocumentsInPlace must be false" >&2
+if ! grep -A1 -F '<key>LSSupportsOpeningDocumentsInPlace</key>' "${PLIST}" | grep -Fq '<true/>'; then
+    echo "error: LSSupportsOpeningDocumentsInPlace must be true" >&2
     exit 1
 fi
 reject_source "${PLIST}" '<key>CFBundleDocumentTypes</key>'
