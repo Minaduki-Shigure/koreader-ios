@@ -33,4 +33,61 @@ describe("Dispatcher runtime actions", function()
     it("removeAction on missing name does not error", function()
         assert.is_truthy(Dispatcher:removeAction("nopenopenope"))
     end)
+
+    describe("iOS plain-text pinch safety", function()
+        local Device, Notification, ReaderUI, UIManager
+        local original_reader_ui
+        local sent_events
+
+        before_each(function()
+            Device = require("device")
+            Notification = require("ui/widget/notification")
+            ReaderUI = require("apps/reader/readerui")
+            UIManager = require("ui/uimanager")
+            original_reader_ui = ReaderUI.instance
+            ReaderUI.instance = {
+                document = { is_txt = true },
+                rolling = {},
+            }
+            sent_events = {}
+            stub(Device, "isIOS")
+            Device.isIOS.returns(true)
+            stub(Notification, "notify")
+            stub(UIManager, "sendEvent", function(_, event)
+                table.insert(sent_events, event)
+            end)
+        end)
+
+        after_each(function()
+            Device.isIOS:revert()
+            Notification.notify:revert()
+            UIManager.sendEvent:revert()
+            ReaderUI.instance = original_reader_ui
+        end)
+
+        it("blocks fixed-step font actions while preserving other actions", function()
+            Dispatcher:execute({
+                decrease_font = 4,
+                show_menu = true,
+                settings = {
+                    order = { "decrease_font", "show_menu" },
+                },
+            }, {
+                gesture = { ges = "pinch" },
+            })
+
+            assert.equals(1, #sent_events)
+            assert.equals("onShowMenu", sent_events[1].handler)
+            assert.stub(Notification.notify).was.called(1)
+        end)
+
+        it("keeps numeric non-gesture font actions available", function()
+            Dispatcher:execute({ increase_font = 2 })
+
+            assert.equals(1, #sent_events)
+            assert.equals("onIncreaseFontSize", sent_events[1].handler)
+            assert.equals(2, sent_events[1].args[1])
+            assert.stub(Notification.notify).was.called(0)
+        end)
+    end)
 end)

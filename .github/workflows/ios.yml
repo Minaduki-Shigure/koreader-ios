@@ -38,7 +38,7 @@ jobs:
       IOS_PLATFORM: iphoneos
       PARALLEL_JOBS: "4"
       AUDITED_PARENT_BASE: 9192014d8bd82a91dc1012473be0f238dedfdb54
-      PINNED_BASE_COMMIT: 2739c5472de805a12e31ed2f9e90775f5e198f79
+      PINNED_BASE_COMMIT: 1f6ec8e936ed07ee8a26007736931d3de0338258
       DERIVED_DATA: build/DerivedData
 
     steps:
@@ -174,7 +174,10 @@ jobs:
 
           for spec in \
             spec/front/unit/safesettings_spec.lua \
+            spec/front/unit/dispatcher_spec.lua \
             spec/front/unit/readerfont_spec.lua \
+            spec/front/unit/readerui_spec.lua \
+            spec/front/unit/sdl3_finger_slots_spec.lua \
             spec/front/unit/sdl_touch_cancel_spec.lua \
             spec/front/unit/ios_system_appearance_spec.lua; do
             "${host_make[@]}" testfront RUNTESTS="${targeted_runner}" T="${spec}" \

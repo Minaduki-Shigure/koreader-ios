@@ -15,6 +15,7 @@ COVER_BROWSER="${REPO_ROOT}/plugins/coverbrowser.koplugin/bookinfomanager.lua"
 IMPORT_PLUGIN="${REPO_ROOT}/plugins/iosimporter.koplugin/main.lua"
 APPEARANCE_PLUGIN="${REPO_ROOT}/plugins/iossystemappearance.koplugin/main.lua"
 SDL_TOUCH_CANCEL_SPEC="${REPO_ROOT}/spec/unit/sdl_touch_cancel_spec.lua"
+SDL_FINGER_SLOTS_SPEC="${REPO_ROOT}/spec/unit/sdl3_finger_slots_spec.lua"
 PLUGIN_LOADER="${REPO_ROOT}/frontend/pluginloader.lua"
 SDL3="${REPO_ROOT}/base/ffi/SDL3.lua"
 DEVICE="${REPO_ROOT}/frontend/device/sdl/device.lua"
@@ -197,17 +198,28 @@ require_source "${SDL3}" 'event.type < SDL.SDL_EVENT_LAST'
 require_source "${SDL3}" 'code = tonumber(event.user.code)'
 require_source "${SDL3}" 'local function popFingerSlot(event)'
 require_source "${SDL3}" 'elseif event.type == SDL.SDL_EVENT_FINGER_CANCELED then'
-require_source "${SDL3}" 'finger_pointers = {}'
+require_source "${SDL3}" 'local FingerSlots = require("ffi/sdl3_finger_slots")'
+require_source "${SDL3}" 'local finger_slots = FingerSlots:new()'
+require_source "${SDL3}" 'finger_slots:reset()'
 require_source "${SDL3}" 'genEmuEvent(C.EV_SDL, SDL.SDL_EVENT_FINGER_CANCELED, nil)'
 require_source "${SDL3}" 'slot = popFingerSlot(event)'
 require_source "${DEVICE}" 'function Device:_handleSDLFingerCanceled(device_input)'
 require_source "${DEVICE}" 'device_input:resetState()'
 require_source "${DEVICE}" 'ev.code == SDL.SDL.SDL_EVENT_FINGER_CANCELED'
 require_source "${SDL_TOUCH_CANCEL_SPEC}" 'resets the complete frontend gesture state'
+require_source "${SDL_FINGER_SLOTS_SPEC}" 'never allocates on pop'
+require_source "${SDL_FINGER_SLOTS_SPEC}" 'drops the complete gesture on cancellation'
 require_source "${REPO_ROOT}/frontend/apps/reader/modules/readerfont.lua" 'function ReaderFont:_isUnsafeIOSPlainTextGesture(ges)'
 require_source "${REPO_ROOT}/frontend/apps/reader/modules/readerfont.lua" 'self.ui.document.is_txt == true'
 require_source "${REPO_ROOT}/frontend/apps/reader/modules/readerfont.lua" 'if self:_rejectUnsafeIOSPlainTextGesture(ges) then return true end'
 require_source "${REPO_ROOT}/spec/unit/readerfont_spec.lua" 'blocks iOS plain-text pinch before it can start a full reflow'
+require_source "${READER_UI}" 'provider.is_txt = file_type == "txt" or file_type == "txt.zip"'
+require_source "${DISPATCHER}" 'function Dispatcher:_withoutUnsafeIOSPlainTextFontActions(settings, gesture)'
+require_source "${DISPATCHER}" 'gesture.ges ~= "pinch" and gesture.ges ~= "spread"'
+require_source "${DISPATCHER}" 'filtered.increase_font = nil'
+require_source "${DISPATCHER}" 'filtered.decrease_font = nil'
+require_source "${REPO_ROOT}/spec/unit/dispatcher_spec.lua" 'blocks fixed-step font actions while preserving other actions'
+require_source "${REPO_ROOT}/spec/unit/readerui_spec.lua" 'should identify plain-text zip documents'
 require_source "${APPEARANCE_PLUGIN}" 'KO_HARDENED_OFFLINE'
 require_source "${APPEARANCE_PLUGIN}" 'ko_ios_system_appearance_start'
 require_source "${APPEARANCE_PLUGIN}" 'controller:syncCurrentAppearance()'
