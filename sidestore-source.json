@@ -19,6 +19,14 @@
       "tintColor": "#00AFA7",
       "versions": [
         {
+          "version": "2026.7.4",
+          "date": "2026-09-02",
+          "localizedDescription": "KOReader 2026.7.4 严格离线 iOS 回滚测试版：撤销 2026.7.3 对文件选择器和多点触控/缩放处理的改动，恢复 2026.7.2 的导入与手势代码路径。LiveContainer 使用前仍需启用 Fix File Picker。TXT 双指缩放卡死尚未解决，请暂时避免该手势。本版本保留跟随系统外观、私有书库和严格离线限制，用于验证多文件导入回归是否消失。",
+          "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.4-b5/KOReader-Strict-Offline-SideStore.ipa",
+          "size": 77868346,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2026.7.3",
           "date": "2026-09-02",
           "localizedDescription": "KOReader 2026.7.3 严格离线 iOS 测试版：为 TXT 安全禁用会触发主线程完整重排的双指字号调整，并修复系统取消多点触控后遗留触点导致的永久卡死；修复文件夹不可选和批量文件选择后无法继续的问题。导入内容仍会经过安全作用域协调读取并复制到应用私有书库，不保存外部文件授权。发布包通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
@@ -27,11 +35,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2026.7.3",
+      "version": "2026.7.4",
       "versionDate": "2026-09-02",
-      "versionDescription": "KOReader 2026.7.3 严格离线 iOS 测试版：为 TXT 安全禁用会触发主线程完整重排的双指字号调整，并修复系统取消多点触控后遗留触点导致的永久卡死；修复文件夹不可选和批量文件选择后无法继续的问题。导入内容仍会经过安全作用域协调读取并复制到应用私有书库，不保存外部文件授权。发布包通过完整前端测试、严格离线策略检查、arm64 Mach-O 闭包检查和 IPA 完整性验证。",
-      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.3-b4/KOReader-Strict-Offline-SideStore.ipa",
-      "size": 77868615
+      "versionDescription": "KOReader 2026.7.4 严格离线 iOS 回滚测试版：撤销 2026.7.3 对文件选择器和多点触控/缩放处理的改动，恢复 2026.7.2 的导入与手势代码路径。LiveContainer 使用前仍需启用 Fix File Picker。TXT 双指缩放卡死尚未解决，请暂时避免该手势。本版本保留跟随系统外观、私有书库和严格离线限制，用于验证多文件导入回归是否消失。",
+      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.4-b5/KOReader-Strict-Offline-SideStore.ipa",
+      "size": 77868346
     }
   ],
   "news": []
