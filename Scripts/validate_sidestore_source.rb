@@ -19,7 +19,7 @@ class SideStoreSourceValidator
   ].freeze
 
   def initialize(source_path:, metadata_path:, ipa_path: nil, sha256_path: nil, tag: nil,
-                 allow_empty_template: false, history_only: false)
+                 allow_empty_template: false, history_only: false, source_kind: "release")
     @source_path = File.expand_path(source_path)
     @metadata_path = File.expand_path(metadata_path)
     @ipa_path = ipa_path && File.expand_path(ipa_path)
@@ -27,6 +27,7 @@ class SideStoreSourceValidator
     @tag = tag
     @allow_empty_template = allow_empty_template
     @history_only = history_only
+    @profile = KOReaderSideStore.source_profile(source_kind)
   end
 
   def validate!
@@ -36,8 +37,15 @@ class SideStoreSourceValidator
     assert(!@history_only || !@tag,
            "--history-only cannot be combined with --tag")
     metadata = KOReaderSideStore.load_release_metadata(@metadata_path)
-    assert(!@tag || @tag == metadata["releaseTag"],
-           "--tag must exactly match release metadata.releaseTag")
+    if @tag
+      expected_tag = KOReaderSideStore.expected_release_tag(metadata, source_kind: @profile.kind)
+      message = if @profile.kind == "release"
+                  "--tag must exactly match release metadata.releaseTag"
+                else
+                  "--tag must exactly match testing tag #{expected_tag.inspect} derived from release metadata"
+                end
+      assert(@tag == expected_tag, message)
+    end
     source = KOReaderSideStore.load_json(@source_path, label: "source JSON")
 
     reject_forbidden_keys(source)
@@ -52,13 +60,13 @@ class SideStoreSourceValidator
 
   def validate_source(source, metadata)
     validate_exact_keys(source, "source", ROOT_KEYS)
-    assert(source["name"] == KOReaderSideStore::SOURCE_NAME,
-           "source.name must be #{KOReaderSideStore::SOURCE_NAME.inspect}")
-    assert(source["identifier"] == KOReaderSideStore::SOURCE_IDENTIFIER,
-           "source.identifier must be #{KOReaderSideStore::SOURCE_IDENTIFIER.inspect}")
+    assert(source["name"] == @profile.source_name,
+           "source.name must be #{@profile.source_name.inspect}")
+    assert(source["identifier"] == @profile.source_identifier,
+           "source.identifier must be #{@profile.source_identifier.inspect}")
     require_nonempty_strings(source, "source", %w[subtitle description])
-    validate_url(source["sourceURL"], "source.sourceURL", KOReaderSideStore::SOURCE_URL)
-    validate_url(source["iconURL"], "source.iconURL", KOReaderSideStore::ICON_URL)
+    validate_url(source["sourceURL"], "source.sourceURL", @profile.source_url)
+    validate_url(source["iconURL"], "source.iconURL", @profile.icon_url)
     validate_url(source["website"], "source.website", KOReaderSideStore::WEBSITE_URL)
     assert(source["tintColor"] == KOReaderSideStore::TINT_COLOR,
            "source.tintColor must be #{KOReaderSideStore::TINT_COLOR.inspect}")
@@ -77,16 +85,16 @@ class SideStoreSourceValidator
     expected_keys = APP_STATIC_KEYS + (versions.empty? ? [] : LEGACY_KEYS)
     validate_exact_keys(app, "source.apps[0]", expected_keys)
 
-    assert(app["beta"] == KOReaderSideStore::APP_BETA,
-           "source.apps[0].beta must be #{KOReaderSideStore::APP_BETA}")
-    assert(app["name"] == KOReaderSideStore::APP_NAME,
-           "source.apps[0].name must be #{KOReaderSideStore::APP_NAME.inspect}")
+    assert(app["beta"] == @profile.app_beta,
+           "source.apps[0].beta must be #{@profile.app_beta}")
+    assert(app["name"] == @profile.app_name,
+           "source.apps[0].name must be #{@profile.app_name.inspect}")
     assert(app["bundleIdentifier"] == KOReaderSideStore::BUNDLE_IDENTIFIER,
            "source.apps[0].bundleIdentifier must be #{KOReaderSideStore::BUNDLE_IDENTIFIER.inspect}")
     assert(app["developerName"] == KOReaderSideStore::DEVELOPER_NAME,
            "source.apps[0].developerName must be #{KOReaderSideStore::DEVELOPER_NAME.inspect}")
     require_nonempty_strings(app, "source.apps[0]", %w[subtitle localizedDescription])
-    validate_url(app["iconURL"], "source.apps[0].iconURL", KOReaderSideStore::ICON_URL)
+    validate_url(app["iconURL"], "source.apps[0].iconURL", @profile.icon_url)
     assert(app["tintColor"] == KOReaderSideStore::TINT_COLOR,
            "source.apps[0].tintColor must be #{KOReaderSideStore::TINT_COLOR.inspect}")
 
@@ -105,7 +113,7 @@ class SideStoreSourceValidator
     validate_legacy_fields(app, latest)
     return latest if @history_only
 
-    expected_tag = @tag || metadata["releaseTag"]
+    expected_tag = @tag || KOReaderSideStore.expected_release_tag(metadata, source_kind: @profile.kind)
     target = parsed.find { |candidate| candidate[:tag] == expected_tag }
     assert(target, "source does not contain release metadata tag #{expected_tag.inspect}")
     assert(target[:source]["version"] == metadata["marketingVersion"],
@@ -128,7 +136,9 @@ class SideStoreSourceValidator
     assert(version["minOSVersion"] == KOReaderSideStore::MINIMUM_OS_VERSION,
            "#{path}.minOSVersion must be #{KOReaderSideStore::MINIMUM_OS_VERSION.inspect}")
 
-    release = KOReaderSideStore.parse_release_url(version["downloadURL"], "#{path}.downloadURL")
+    release = KOReaderSideStore.parse_release_url(
+      version["downloadURL"], "#{path}.downloadURL", source_kind: @profile.kind
+    )
     assert(version["version"] == release[:version_string],
            "#{path}.version must identify the same version as its release tag")
     { semantic: semantic, build: release[:build], date: date, tag: release[:tag] }
@@ -244,7 +254,8 @@ if $PROGRAM_NAME == __FILE__
     sha256_path: nil,
     tag: nil,
     allow_empty_template: false,
-    history_only: false
+    history_only: false,
+    source_kind: "release"
   }
 
   parser = OptionParser.new do |opts|
@@ -254,6 +265,10 @@ if $PROGRAM_NAME == __FILE__
     end
     opts.on("--metadata PATH", "Release metadata JSON (default: platform/ios/release.json)") do |path|
       options[:metadata_path] = path
+    end
+    opts.on("--source-kind KIND", KOReaderSideStore::SOURCE_KINDS,
+            "Source profile: release or testing (default: release)") do |kind|
+      options[:source_kind] = kind
     end
     opts.on("--ipa PATH", "Compare the selected release source size with this IPA") do |path|
       options[:ipa_path] = path

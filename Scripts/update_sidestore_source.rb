@@ -25,13 +25,15 @@ class SideStoreSourceUpdater
     "size" => "size"
   }.freeze
 
-  def initialize(source_path:, metadata_path:, ipa_path:, tag:, date:, description:)
+  def initialize(source_path:, metadata_path:, ipa_path:, tag:, date:, description:,
+                 source_kind: "release")
     @source_path = File.expand_path(source_path)
     @metadata_path = File.expand_path(metadata_path)
     @ipa_path = File.expand_path(ipa_path)
     @tag = tag
     @date = date
     @description = description
+    @profile = KOReaderSideStore.source_profile(source_kind)
   end
 
   def update!
@@ -73,8 +75,14 @@ class SideStoreSourceUpdater
   def validate_inputs!(metadata)
     assert(File.file?(@ipa_path), "IPA file not found: #{@ipa_path}")
     assert(File.size(@ipa_path).positive?, "IPA file must not be empty")
-    assert(@tag == metadata["releaseTag"],
-           "--tag must exactly match release metadata.releaseTag")
+    expected_tag = KOReaderSideStore.expected_release_tag(metadata, source_kind: @profile.kind)
+    if @profile.kind == "release"
+      assert(@tag == metadata["releaseTag"],
+             "--tag must exactly match release metadata.releaseTag")
+    else
+      assert(@tag == expected_tag,
+             "--tag must exactly match testing tag #{expected_tag.inspect} derived from release metadata")
+    end
     KOReaderSideStore.parse_date(@date, "release date")
     assert(@description.is_a?(String) && !@description.strip.empty?,
            "release description must be a non-empty string")
@@ -89,11 +97,11 @@ class SideStoreSourceUpdater
     forbidden = find_forbidden_keys(source)
     assert(forbidden.empty?, "source contains forbidden PAL/source fields: #{forbidden.uniq.join(', ')}")
     KOReaderSideStore.validate_exact_keys(source, "source", ROOT_KEYS)
-    assert(source["name"] == KOReaderSideStore::SOURCE_NAME, "source.name is unexpected")
-    assert(source["identifier"] == KOReaderSideStore::SOURCE_IDENTIFIER,
+    assert(source["name"] == @profile.source_name, "source.name is unexpected")
+    assert(source["identifier"] == @profile.source_identifier,
            "source.identifier is unexpected")
-    assert(source["sourceURL"] == KOReaderSideStore::SOURCE_URL, "source.sourceURL is unexpected")
-    assert(source["iconURL"] == KOReaderSideStore::ICON_URL, "source.iconURL is unexpected")
+    assert(source["sourceURL"] == @profile.source_url, "source.sourceURL is unexpected")
+    assert(source["iconURL"] == @profile.icon_url, "source.iconURL is unexpected")
     assert(source["website"] == KOReaderSideStore::WEBSITE_URL, "source.website is unexpected")
     assert(source["tintColor"] == KOReaderSideStore::TINT_COLOR, "source.tintColor is unexpected")
     assert(source["news"] == [], "source.news must be an empty array")
@@ -107,14 +115,14 @@ class SideStoreSourceUpdater
     assert(versions.is_a?(Array), "source app versions must be an array")
     expected_app_keys = APP_STATIC_KEYS + (versions.empty? ? [] : LEGACY_MAPPING.keys)
     KOReaderSideStore.validate_exact_keys(app, "source.apps[0]", expected_app_keys)
-    assert(app["beta"] == KOReaderSideStore::APP_BETA,
+    assert(app["beta"] == @profile.app_beta,
            "source app beta is unexpected")
-    assert(app["name"] == KOReaderSideStore::APP_NAME, "source app name is unexpected")
+    assert(app["name"] == @profile.app_name, "source app name is unexpected")
     assert(app["bundleIdentifier"] == KOReaderSideStore::BUNDLE_IDENTIFIER,
            "source app bundleIdentifier is unexpected")
     assert(app["developerName"] == KOReaderSideStore::DEVELOPER_NAME,
            "source app developerName is unexpected")
-    assert(app["iconURL"] == KOReaderSideStore::ICON_URL, "source app iconURL is unexpected")
+    assert(app["iconURL"] == @profile.icon_url, "source app iconURL is unexpected")
     assert(app["tintColor"] == KOReaderSideStore::TINT_COLOR,
            "source app tintColor is unexpected")
     KOReaderSideStore.require_nonempty_strings(
@@ -137,7 +145,9 @@ class SideStoreSourceUpdater
       path = "source.apps[0].versions[#{index}]"
       KOReaderSideStore.validate_exact_keys(version, path, VERSION_KEYS)
       semantic = KOReaderSideStore.parse_version(version["version"], "#{path}.version")
-      release = KOReaderSideStore.parse_release_url(version["downloadURL"], "#{path}.downloadURL")
+      release = KOReaderSideStore.parse_release_url(
+        version["downloadURL"], "#{path}.downloadURL", source_kind: @profile.kind
+      )
       assert(version["version"] == release[:version_string],
              "#{path} version and release tag disagree")
       KOReaderSideStore.parse_date(version["date"], "#{path}.date")
@@ -167,7 +177,7 @@ class SideStoreSourceUpdater
       "version" => metadata["marketingVersion"],
       "date" => @date,
       "localizedDescription" => metadata["localizedDescription"],
-      "downloadURL" => KOReaderSideStore.release_url(metadata["releaseTag"]),
+      "downloadURL" => KOReaderSideStore.release_url(@tag, source_kind: @profile.kind),
       "size" => File.size(@ipa_path),
       "minOSVersion" => KOReaderSideStore::MINIMUM_OS_VERSION
     }
@@ -175,7 +185,9 @@ class SideStoreSourceUpdater
 
   def validate_newer_than_history!(expected, metadata, latest)
     latest_semantic = KOReaderSideStore.parse_version(latest["version"], "latest source version")
-    latest_release = KOReaderSideStore.parse_release_url(latest["downloadURL"], "latest source downloadURL")
+    latest_release = KOReaderSideStore.parse_release_url(
+      latest["downloadURL"], "latest source downloadURL", source_kind: @profile.kind
+    )
     new_semantic = metadata["parsedMarketingVersion"]
     assert((new_semantic <=> latest_semantic).positive?,
            "new marketingVersion must be strictly greater than the latest published version")
@@ -245,7 +257,8 @@ if $PROGRAM_NAME == __FILE__
   repository_root = File.expand_path("..", __dir__)
   options = {
     source_path: File.join(repository_root, "sidestore-source.json"),
-    metadata_path: File.join(repository_root, "platform", "ios", "release.json")
+    metadata_path: File.join(repository_root, "platform", "ios", "release.json"),
+    source_kind: "release"
   }
 
   parser = OptionParser.new do |opts|
@@ -257,10 +270,14 @@ if $PROGRAM_NAME == __FILE__
     opts.on("--metadata PATH", "Release metadata JSON (default: platform/ios/release.json)") do |path|
       options[:metadata_path] = path
     end
+    opts.on("--source-kind KIND", KOReaderSideStore::SOURCE_KINDS,
+            "Source profile: release or testing (default: release)") do |kind|
+      options[:source_kind] = kind
+    end
     opts.on("--ipa PATH", "Published IPA whose byte size will be recorded") do |path|
       options[:ipa_path] = path
     end
-    opts.on("--tag TAG", "Exact GitHub Release tag from release metadata") do |tag|
+    opts.on("--tag TAG", "Exact GitHub Release tag for the selected source profile") do |tag|
       options[:tag] = tag
     end
     opts.on("--date DATE", "Published date in YYYY-MM-DD format") do |date|

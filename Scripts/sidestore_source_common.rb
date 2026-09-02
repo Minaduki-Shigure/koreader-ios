@@ -7,25 +7,77 @@ require "uri"
 
 module KOReaderSideStore
   REPOSITORY = "Minaduki-Shigure/koreader-ios"
-  SOURCE_BRANCH = "ios-release"
   ASSET_NAME = "KOReader-Strict-Offline-SideStore.ipa"
 
-  SOURCE_NAME = "KOReader iOS Strict Offline"
-  SOURCE_IDENTIFIER = "io.github.minaduki-shigure.koreader-ios.source"
-  SOURCE_URL =
-    "https://raw.githubusercontent.com/#{REPOSITORY}/refs/heads/#{SOURCE_BRANCH}/sidestore-source.json"
-  ICON_URL =
-    "https://raw.githubusercontent.com/#{REPOSITORY}/refs/heads/#{SOURCE_BRANCH}/" \
-    "platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png"
   WEBSITE_URL = "https://github.com/#{REPOSITORY}"
   TINT_COLOR = "#00AFA7"
 
-  APP_NAME = "KOReader"
   BUNDLE_IDENTIFIER = "rocks.koreader.ios"
   DEVELOPER_NAME = "KOReader contributors and Minaduki-Shigure"
   MINIMUM_OS_VERSION = "14.0"
   RELEASE_CHANNELS = %w[beta stable].freeze
-  APP_BETA = false
+
+  SourceProfile = Struct.new(
+    :kind,
+    :source_branch,
+    :source_name,
+    :source_identifier,
+    :app_name,
+    :app_beta,
+    :tag_prefix,
+    keyword_init: true
+  ) do
+    def source_url
+      "https://raw.githubusercontent.com/#{KOReaderSideStore::REPOSITORY}/refs/heads/" \
+        "#{source_branch}/sidestore-source.json"
+    end
+
+    def icon_url
+      "https://raw.githubusercontent.com/#{KOReaderSideStore::REPOSITORY}/refs/heads/" \
+        "#{source_branch}/platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png"
+    end
+
+    def release_tag(version, build)
+      "#{tag_prefix}#{version}-b#{build}"
+    end
+
+    def tag_format
+      "#{tag_prefix}X.Y.Z-bN"
+    end
+  end
+
+  RELEASE_PROFILE = SourceProfile.new(
+    kind: "release",
+    source_branch: "ios-release",
+    source_name: "KOReader iOS Strict Offline",
+    source_identifier: "io.github.minaduki-shigure.koreader-ios.source",
+    app_name: "KOReader",
+    app_beta: false,
+    tag_prefix: "ios-v"
+  ).freeze
+  TESTING_PROFILE = SourceProfile.new(
+    kind: "testing",
+    source_branch: "ios-testing",
+    source_name: "KOReader iOS Strict Offline Testing",
+    source_identifier: "io.github.minaduki-shigure.koreader-ios.testing-source",
+    app_name: "KOReader Testing",
+    app_beta: false,
+    tag_prefix: "ios-test-v"
+  ).freeze
+  SOURCE_PROFILES = {
+    RELEASE_PROFILE.kind => RELEASE_PROFILE,
+    TESTING_PROFILE.kind => TESTING_PROFILE
+  }.freeze
+  SOURCE_KINDS = SOURCE_PROFILES.keys.freeze
+
+  # Backwards-compatible aliases for the canonical release source.
+  SOURCE_BRANCH = RELEASE_PROFILE.source_branch
+  SOURCE_NAME = RELEASE_PROFILE.source_name
+  SOURCE_IDENTIFIER = RELEASE_PROFILE.source_identifier
+  SOURCE_URL = RELEASE_PROFILE.source_url
+  ICON_URL = RELEASE_PROFILE.icon_url
+  APP_NAME = RELEASE_PROFILE.app_name
+  APP_BETA = RELEASE_PROFILE.app_beta
 
   FORBIDDEN_KEYS = %w[marketplaceID Build build buildVersion buildNumber sha256].freeze
   METADATA_KEYS = %w[
@@ -43,6 +95,17 @@ module KOReaderSideStore
   end
 
   module_function
+
+  def source_profile(kind = "release")
+    profile = SOURCE_PROFILES[kind.to_s]
+    assert(profile, "source kind must be one of: #{SOURCE_KINDS.join(', ')}")
+    profile
+  end
+
+  def expected_release_tag(metadata, source_kind: "release")
+    profile = source_profile(source_kind)
+    profile.release_tag(metadata.fetch("marketingVersion"), metadata.fetch("buildVersion"))
+  end
 
   def load_json(path, label: path)
     object = JSON.parse(
@@ -76,11 +139,13 @@ module KOReaderSideStore
     metadata.merge("parsedMarketingVersion" => marketing, "parsedBuildVersion" => build)
   end
 
-  def release_url(tag)
+  def release_url(tag, source_kind: "release")
+    source_profile(source_kind)
     "https://github.com/#{REPOSITORY}/releases/download/#{tag}/#{ASSET_NAME}"
   end
 
-  def parse_release_url(value, path)
+  def parse_release_url(value, path, source_kind: "release")
+    profile = source_profile(source_kind)
     uri = validate_https_url(value, path)
     assert(uri.host == "github.com", "#{path} must be hosted on github.com")
     assert(uri.query.nil? && uri.fragment.nil?, "#{path} must not contain a query or fragment")
@@ -93,9 +158,10 @@ module KOReaderSideStore
            "#{path} has an unexpected release asset path")
     assert(segments[-1] == ASSET_NAME, "#{path} asset must be #{ASSET_NAME}")
 
-    tag_match = segments[-2].match(/\Aios-v(\d+\.\d+\.\d+)-b([1-9]\d*)\z/)
-    assert(tag_match, "#{path} tag must use ios-vX.Y.Z-bN format")
-    assert(value == release_url(segments[-2]),
+    tag_pattern = /\A#{Regexp.escape(profile.tag_prefix)}(\d+\.\d+\.\d+)-b([1-9]\d*)\z/
+    tag_match = segments[-2].match(tag_pattern)
+    assert(tag_match, "#{path} tag must use #{profile.tag_format} format")
+    assert(value == release_url(segments[-2], source_kind: profile.kind),
            "#{path} must use the exact GitHub Release asset URL")
     {
       tag: segments[-2],

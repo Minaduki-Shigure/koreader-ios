@@ -11,6 +11,10 @@ require_relative "update_sidestore_source"
 require_relative "validate_sidestore_source"
 
 class SideStoreSourceToolsTest < Minitest::Test
+  TESTING_TEMPLATE_PATH = File.expand_path(
+    "../platform/ios/sidestore-testing-source-template.json", __dir__
+  )
+
   def setup
     @directory = Dir.mktmpdir("koreader-source-test")
     @source_path = File.join(@directory, "sidestore-source.json")
@@ -93,6 +97,116 @@ class SideStoreSourceToolsTest < Minitest::Test
 
     assert validator(allow_empty_template: true).validate!
     refute read_json(@source_path).dig("apps", 0, "beta")
+  end
+
+  def test_source_profiles_are_distinct_and_release_aliases_remain_compatible
+    release = KOReaderSideStore.source_profile("release")
+    testing = KOReaderSideStore.source_profile("testing")
+    metadata = KOReaderSideStore.load_release_metadata(@metadata_path)
+
+    assert_equal %w[release testing], KOReaderSideStore::SOURCE_KINDS
+    assert_equal "ios-release", release.source_branch
+    assert_equal KOReaderSideStore::SOURCE_NAME, release.source_name
+    assert_equal KOReaderSideStore::SOURCE_IDENTIFIER, release.source_identifier
+    assert_equal KOReaderSideStore::SOURCE_URL, release.source_url
+    assert_equal KOReaderSideStore::ICON_URL, release.icon_url
+    assert_equal KOReaderSideStore::APP_NAME, release.app_name
+    assert_equal KOReaderSideStore::APP_BETA, release.app_beta
+    refute release.app_beta
+
+    assert_equal "ios-testing", testing.source_branch
+    assert_equal "KOReader iOS Strict Offline Testing", testing.source_name
+    assert_equal "io.github.minaduki-shigure.koreader-ios.testing-source",
+                 testing.source_identifier
+    assert_equal "KOReader Testing", testing.app_name
+    refute testing.app_beta
+    assert_equal "ios-v2026.7.1-b1",
+                 KOReaderSideStore.expected_release_tag(metadata, source_kind: "release")
+    assert_equal "ios-test-v2026.7.1-b1",
+                 KOReaderSideStore.expected_release_tag(metadata, source_kind: "testing")
+
+    error = assert_raises(KOReaderSideStore::Error) do
+      KOReaderSideStore.source_profile("nightly")
+    end
+    assert_includes error.message, "release, testing"
+  end
+
+  def test_testing_template_matches_its_profile_and_rejects_release_validation
+    template = testing_template
+    testing = KOReaderSideStore.source_profile("testing")
+    app = template.fetch("apps").fetch(0)
+
+    assert_equal testing.source_name, template["name"]
+    assert_equal testing.source_identifier, template["identifier"]
+    assert_equal testing.source_url, template["sourceURL"]
+    assert_equal testing.icon_url, template["iconURL"]
+    assert_equal testing.app_name, app["name"]
+    assert_equal testing.app_beta, app["beta"]
+    assert_equal [], app["versions"]
+
+    write_json(@source_path, template)
+    assert validator(source_kind: "testing", allow_empty_template: true).validate!
+    error = assert_raises(ValidationError) do
+      validator(allow_empty_template: true).validate!
+    end
+    assert_includes error.message, "source.name"
+  end
+
+  def test_testing_source_update_is_idempotent_and_uses_testing_release_url
+    write_json(@source_path, testing_template)
+    tag = "ios-test-v2026.7.1-b1"
+    testing_updater = updater(source_kind: "testing", tag: tag)
+
+    assert testing_updater.update!
+    refute testing_updater.update!
+
+    app = read_json(@source_path).fetch("apps").fetch(0)
+    version = app.fetch("versions").fetch(0)
+    assert_equal "KOReader Testing", app["name"]
+    refute app["beta"]
+    assert_equal KOReaderSideStore.release_url(tag, source_kind: "testing"),
+                 version["downloadURL"]
+    assert_equal version["downloadURL"], app["downloadURL"]
+
+    write_checksum
+    assert validator(
+      source_kind: "testing",
+      ipa_path: @ipa_path,
+      sha256_path: @sha256_path,
+      tag: tag
+    ).validate!
+  end
+
+  def test_release_and_testing_tags_and_urls_are_not_interchangeable
+    release_tag = "ios-v2026.7.1-b1"
+    testing_tag = "ios-test-v2026.7.1-b1"
+    release_url = KOReaderSideStore.release_url(release_tag)
+    testing_url = KOReaderSideStore.release_url(testing_tag, source_kind: "testing")
+
+    assert_equal release_tag,
+                 KOReaderSideStore.parse_release_url(release_url, "release URL")[:tag]
+    assert_equal testing_tag, KOReaderSideStore.parse_release_url(
+      testing_url, "testing URL", source_kind: "testing"
+    )[:tag]
+    assert_includes assert_raises(KOReaderSideStore::Error) {
+      KOReaderSideStore.parse_release_url(testing_url, "testing URL")
+    }.message, "ios-vX.Y.Z-bN"
+    assert_includes assert_raises(KOReaderSideStore::Error) {
+      KOReaderSideStore.parse_release_url(release_url, "release URL", source_kind: "testing")
+    }.message, "ios-test-vX.Y.Z-bN"
+
+    assert_includes assert_raises(SourceUpdateError) {
+      updater(tag: testing_tag).update!
+    }.message, "release metadata.releaseTag"
+    write_json(@source_path, testing_template)
+    assert_includes assert_raises(SourceUpdateError) {
+      updater(source_kind: "testing", tag: release_tag).update!
+    }.message, "testing tag"
+    assert_includes assert_raises(ValidationError) {
+      validator(
+        source_kind: "testing", tag: release_tag, allow_empty_template: true
+      ).validate!
+    }.message, "testing tag"
   end
 
   def test_ios_marketing_version_can_advance_without_changing_upstream_tag
@@ -288,19 +402,21 @@ class SideStoreSourceToolsTest < Minitest::Test
     )
   end
 
-  def updater(tag: "ios-v2026.7.1-b1", description: release_description, date: "2026-09-02")
+  def updater(tag: "ios-v2026.7.1-b1", description: release_description, date: "2026-09-02",
+              source_kind: "release")
     SideStoreSourceUpdater.new(
       source_path: @source_path,
       metadata_path: @metadata_path,
       ipa_path: @ipa_path,
       tag: tag,
       date: date,
-      description: description
+      description: description,
+      source_kind: source_kind
     )
   end
 
   def validator(ipa_path: nil, sha256_path: nil, tag: nil, allow_empty_template: false,
-                history_only: false)
+                history_only: false, source_kind: "release")
     SideStoreSourceValidator.new(
       source_path: @source_path,
       metadata_path: @metadata_path,
@@ -308,8 +424,13 @@ class SideStoreSourceToolsTest < Minitest::Test
       sha256_path: sha256_path,
       tag: tag,
       allow_empty_template: allow_empty_template,
-      history_only: history_only
+      history_only: history_only,
+      source_kind: source_kind
     )
+  end
+
+  def testing_template
+    JSON.parse(File.read(TESTING_TEMPLATE_PATH))
   end
 
   def write_checksum(digest = Digest::SHA256.file(@ipa_path).hexdigest)

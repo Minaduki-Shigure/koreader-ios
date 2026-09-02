@@ -1,0 +1,24 @@
+{
+  "name": "KOReader iOS Strict Offline Testing",
+  "identifier": "io.github.minaduki-shigure.koreader-ios.testing-source",
+  "sourceURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-testing/sidestore-source.json",
+  "subtitle": "Pre-release strict-offline builds for device testing",
+  "description": "Testing channel for KOReader's experimental strict-offline iOS port. Builds are unsigned and intended for validation with SideStore or LiveContainer before a normal release.",
+  "iconURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-testing/platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png",
+  "website": "https://github.com/Minaduki-Shigure/koreader-ios",
+  "tintColor": "#00AFA7",
+  "apps": [
+    {
+      "beta": false,
+      "name": "KOReader Testing",
+      "bundleIdentifier": "rocks.koreader.ios",
+      "developerName": "KOReader contributors and Minaduki-Shigure",
+      "subtitle": "Pre-release strict-offline reader",
+      "localizedDescription": "Device-testing builds of KOReader for iOS. Install only when validating a candidate release; published testing builds remain immutable and may contain regressions.",
+      "iconURL": "https://raw.githubusercontent.com/Minaduki-Shigure/koreader-ios/refs/heads/ios-testing/platform/ios/Assets.xcassets/AppIcon.appiconset/icon_1024.png",
+      "tintColor": "#00AFA7",
+      "versions": []
+    }
+  ],
+  "news": []
+}

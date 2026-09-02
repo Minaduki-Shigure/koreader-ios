@@ -9,6 +9,7 @@ on:
       - ios-release
     tags:
       - "ios-v*"
+      - "ios-test-v*"
   pull_request:
 
 permissions:
@@ -67,8 +68,16 @@ jobs:
 
           test "${metadata_upstream}" = "${IOS_UPSTREAM_TAG}"
           test "${metadata_tag}" = "ios-v${metadata_version}-b${metadata_build}"
+          [[ "${metadata_tag}" =~ ^ios-v[0-9]+\.[0-9]+\.[0-9]+-b[1-9][0-9]*$ ]]
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
-            test "${GITHUB_REF_NAME}" = "${metadata_tag}"
+            testing_tag="ios-test-v${metadata_version}-b${metadata_build}"
+            case "${GITHUB_REF_NAME}" in
+              "${metadata_tag}"|"${testing_tag}") ;;
+              *)
+                echo "Unsupported iOS publication tag: ${GITHUB_REF_NAME}" >&2
+                exit 1
+                ;;
+            esac
             test "$(git rev-parse "refs/tags/${GITHUB_REF_NAME}^{commit}")" = \
               "${GITHUB_SHA}"
           fi
@@ -77,6 +86,7 @@ jobs:
         run: |
           ruby Scripts/test_sidestore_source.rb
           ruby Scripts/validate_sidestore_source.rb \
+            --source-kind release \
             --history-only \
             --allow-empty-template
 
@@ -446,19 +456,37 @@ jobs:
         run: |
           set -euo pipefail
           candidate="${RUNNER_TEMP}/sidestore-source.json"
-          cp sidestore-source.json "${candidate}"
-          tag="$(ruby -rjson -e \
-            'puts JSON.parse(File.read("platform/ios/release.json")).fetch("releaseTag")')"
+          version="$(ruby -rjson -e \
+            'puts JSON.parse(File.read("platform/ios/release.json")).fetch("marketingVersion")')"
+          build="$(ruby -rjson -e \
+            'puts JSON.parse(File.read("platform/ios/release.json")).fetch("buildVersion")')"
+          case "${GITHUB_REF_NAME}" in
+            "ios-v${version}-b${build}")
+              source_kind=release
+              cp sidestore-source.json "${candidate}"
+              ;;
+            "ios-test-v${version}-b${build}")
+              source_kind=testing
+              cp platform/ios/sidestore-testing-source-template.json "${candidate}"
+              ;;
+            *)
+              echo "Unsupported iOS publication tag: ${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
+          tag="${GITHUB_REF_NAME}"
           description="$(ruby -rjson -e \
             'puts JSON.parse(File.read("platform/ios/release.json")).fetch("localizedDescription")')"
           release_date="$(git show -s --format=%cs HEAD)"
           ruby Scripts/update_sidestore_source.rb \
+            --source-kind "${source_kind}" \
             --source "${candidate}" \
             --ipa "artifacts/KOReader-Strict-Offline-SideStore.ipa" \
             --tag "${tag}" \
             --date "${release_date}" \
             --description "${description}"
           ruby Scripts/validate_sidestore_source.rb \
+            --source-kind "${source_kind}" \
             --source "${candidate}" \
             --ipa "artifacts/KOReader-Strict-Offline-SideStore.ipa" \
             --sha256-file \
@@ -485,12 +513,12 @@ jobs:
 
   publish:
     name: Publish verified IPA and app source
-    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && (startsWith(github.ref_name, 'ios-v') || startsWith(github.ref_name, 'ios-test-v')) }}
     needs: ios
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     concurrency:
-      group: koreader-ios-release-publication
+      group: koreader-ios-${{ startsWith(github.ref_name, 'ios-test-v') && 'testing' || 'release' }}-publication
       cancel-in-progress: false
     permissions:
       actions: read
@@ -501,7 +529,8 @@ jobs:
       SHA_NAME: KOReader-Strict-Offline-SideStore.ipa.sha256
       RELEASE_SHA: ${{ github.sha }}
       RELEASE_TAG: ${{ github.ref_name }}
-      SOURCE_BRANCH: ios-release
+      SOURCE_KIND: ${{ startsWith(github.ref_name, 'ios-test-v') && 'testing' || 'release' }}
+      SOURCE_BRANCH: ${{ startsWith(github.ref_name, 'ios-test-v') && 'ios-testing' || 'ios-release' }}
 
     steps:
       - name: Download the tested artifact
@@ -544,11 +573,25 @@ jobs:
           metadata_build="$(jq -er '.buildVersion' "${metadata}")"
           metadata_upstream="$(jq -er '.upstreamTag' "${metadata}")"
           metadata_channel="$(jq -er '.channel' "${metadata}")"
-          test "${RELEASE_TAG}" = "${metadata_tag}"
           test "${metadata_tag}" = "ios-v${metadata_version}-b${metadata_build}"
           [[ "${metadata_tag}" =~ ^ios-v[0-9]+\.[0-9]+\.[0-9]+-b[1-9][0-9]*$ ]]
           [[ "${metadata_upstream}" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
           [[ "${metadata_channel}" = beta || "${metadata_channel}" = stable ]]
+          case "${SOURCE_KIND}:${SOURCE_BRANCH}" in
+            release:ios-release)
+              test "${RELEASE_TAG}" = "${metadata_tag}"
+              [[ "${RELEASE_TAG}" =~ ^ios-v[0-9]+\.[0-9]+\.[0-9]+-b[1-9][0-9]*$ ]]
+              ;;
+            testing:ios-testing)
+              test "${RELEASE_TAG}" = \
+                "ios-test-v${metadata_version}-b${metadata_build}"
+              [[ "${RELEASE_TAG}" =~ ^ios-test-v[0-9]+\.[0-9]+\.[0-9]+-b[1-9][0-9]*$ ]]
+              ;;
+            *)
+              echo "Invalid source publication configuration: ${SOURCE_KIND}:${SOURCE_BRANCH}" >&2
+              exit 1
+              ;;
+          esac
 
           git -C tag-source fetch --force --no-tags origin \
             "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
@@ -611,20 +654,23 @@ jobs:
             "refs/remotes/origin/${SOURCE_BRANCH}")"
           test "$(git -C source-update rev-parse \
             "refs/tags/${RELEASE_TAG}^{commit}")" = "${RELEASE_SHA}"
-          if git -C source-update merge-base --is-ancestor \
-              "${source_head}" "${RELEASE_SHA}"; then
-            :
-          elif git -C source-update merge-base --is-ancestor \
-              "${RELEASE_SHA}" "${source_head}"; then
-            :
-          else
-            echo "${SOURCE_BRANCH} and ${RELEASE_TAG} have diverged" >&2
-            exit 1
+          if [ "${SOURCE_KIND}" = release ]; then
+            if git -C source-update merge-base --is-ancestor \
+                "${source_head}" "${RELEASE_SHA}"; then
+              :
+            elif git -C source-update merge-base --is-ancestor \
+                "${RELEASE_SHA}" "${source_head}"; then
+              :
+            else
+              echo "${SOURCE_BRANCH} and ${RELEASE_TAG} have diverged" >&2
+              exit 1
+            fi
           fi
 
           git -C source-update show \
             "${source_head}:sidestore-source.json" >"${candidate}"
           ruby tag-source/Scripts/update_sidestore_source.rb \
+            --source-kind "${SOURCE_KIND}" \
             --source "${candidate}" \
             --metadata "${metadata}" \
             --ipa "release-artifact/${IPA_NAME}" \
@@ -632,6 +678,7 @@ jobs:
             --date "$(date -u +%F)" \
             --description "${description}"
           ruby tag-source/Scripts/validate_sidestore_source.rb \
+            --source-kind "${SOURCE_KIND}" \
             --source "${candidate}" \
             --metadata "${metadata}" \
             --ipa "release-artifact/${IPA_NAME}" \
@@ -653,12 +700,18 @@ jobs:
           description="$(jq -er '.localizedDescription' "${metadata}")"
           ipa_sha256="$(sha256sum "${ipa}" | awk '{print $1}')"
           expected_prerelease=false
-          if [ "${channel}" = beta ]; then
+          if [ "${SOURCE_KIND}" = testing ] || [ "${channel}" = beta ]; then
             expected_prerelease=true
           fi
-          release_name="KOReader ${version} strict-offline iOS"
-          release_body="$(printf '%s\n\nUnsigned arm64 IPA for SideStore or LiveContainer self-signing. Minimum iOS/iPadOS: 14.0.\n\nSHA-256: `%s`' \
-            "${description}" "${ipa_sha256}")"
+          if [ "${SOURCE_KIND}" = testing ]; then
+            release_name="KOReader ${version} strict-offline iOS Candidate"
+            release_body="$(printf '%s\n\nTesting candidate. Unsigned arm64 IPA for SideStore or LiveContainer self-signing. Minimum iOS/iPadOS: 14.0.\n\nSHA-256: `%s`' \
+              "${description}" "${ipa_sha256}")"
+          else
+            release_name="KOReader ${version} strict-offline iOS"
+            release_body="$(printf '%s\n\nUnsigned arm64 IPA for SideStore or LiveContainer self-signing. Minimum iOS/iPadOS: 14.0.\n\nSHA-256: `%s`' \
+              "${description}" "${ipa_sha256}")"
+          fi
 
           release_matches="$(
             gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" |
@@ -672,15 +725,20 @@ jobs:
           fi
 
           if [ "${release_count}" -eq 0 ]; then
-            release_json="$(gh api \
-              --method POST \
-              "repos/${GITHUB_REPOSITORY}/releases" \
-              -f tag_name="${RELEASE_TAG}" \
-              -f target_commitish="${RELEASE_SHA}" \
-              -f name="${release_name}" \
-              -f body="${release_body}" \
-              -F draft=true \
-              -F prerelease="${expected_prerelease}")"
+            create_release_args=(
+              --method POST
+              "repos/${GITHUB_REPOSITORY}/releases"
+              -f tag_name="${RELEASE_TAG}"
+              -f target_commitish="${RELEASE_SHA}"
+              -f name="${release_name}"
+              -f body="${release_body}"
+              -F draft=true
+              -F prerelease="${expected_prerelease}"
+            )
+            if [ "${SOURCE_KIND}" = testing ]; then
+              create_release_args+=(-f make_latest=false)
+            fi
+            release_json="$(gh api "${create_release_args[@]}")"
           else
             release_json="$(jq '.[0]' <<<"${release_matches}")"
           fi
@@ -794,10 +852,15 @@ jobs:
             "${expected_source_head}"
 
           if [ "$(jq -r '.draft' <<<"${release_json}")" = true ]; then
-            release_json="$(gh api \
-              --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-              -F draft=false)"
+            publish_release_args=(
+              --method PATCH
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+              -F draft=false
+            )
+            if [ "${SOURCE_KIND}" = testing ]; then
+              publish_release_args+=(-f make_latest=false)
+            fi
+            release_json="$(gh api "${publish_release_args[@]}")"
           fi
           test "$(jq -r '.draft' <<<"${release_json}")" = false
           gh api \
@@ -814,6 +877,21 @@ jobs:
           test "$(jq -r '.tag_name' "${release_json}")" = "${RELEASE_TAG}"
           test "$(jq -r '.draft' "${release_json}")" = false
           test "$(jq -r '.immutable' "${release_json}")" = true
+          expected_prerelease=false
+          if [ "${SOURCE_KIND}" = testing ] || \
+              [ "$(jq -er '.channel' tag-source/platform/ios/release.json)" = beta ]; then
+            expected_prerelease=true
+          fi
+          test "$(jq -r '.prerelease' "${release_json}")" = \
+            "${expected_prerelease}"
+          if [ "${SOURCE_KIND}" = testing ]; then
+            test "$(jq -r '.name' "${release_json}")" = \
+              "KOReader $(jq -er '.marketingVersion' tag-source/platform/ios/release.json) strict-offline iOS Candidate"
+            latest_tag="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/releases/latest" \
+              --jq .tag_name 2>/dev/null || true)"
+            test "${latest_tag}" != "${RELEASE_TAG}"
+          fi
           test "$(jq '.assets | length' "${release_json}")" -eq 2
 
           for asset_name in "${IPA_NAME}" "${SHA_NAME}"; do
@@ -849,21 +927,24 @@ jobs:
             "refs/remotes/origin/${SOURCE_BRANCH}"
           test "$(git -C source-update rev-parse \
             "refs/tags/${RELEASE_TAG}^{commit}")" = "${RELEASE_SHA}"
-          source_head="$(git -C source-update rev-parse HEAD)"
-          if [ "${source_head}" = "${RELEASE_SHA}" ]; then
-            :
-          elif git -C source-update merge-base --is-ancestor \
-              "${source_head}" "${RELEASE_SHA}"; then
-            git -C source-update merge --ff-only "${RELEASE_SHA}"
-          elif git -C source-update merge-base --is-ancestor \
-              "${RELEASE_SHA}" "${source_head}"; then
-            echo "Source branch already contains ${RELEASE_TAG}."
-          else
-            echo "${SOURCE_BRANCH} and ${RELEASE_TAG} have diverged" >&2
-            exit 1
+          if [ "${SOURCE_KIND}" = release ]; then
+            source_head="$(git -C source-update rev-parse HEAD)"
+            if [ "${source_head}" = "${RELEASE_SHA}" ]; then
+              :
+            elif git -C source-update merge-base --is-ancestor \
+                "${source_head}" "${RELEASE_SHA}"; then
+              git -C source-update merge --ff-only "${RELEASE_SHA}"
+            elif git -C source-update merge-base --is-ancestor \
+                "${RELEASE_SHA}" "${source_head}"; then
+              echo "Source branch already contains ${RELEASE_TAG}."
+            else
+              echo "${SOURCE_BRANCH} and ${RELEASE_TAG} have diverged" >&2
+              exit 1
+            fi
           fi
 
           ruby tag-source/Scripts/update_sidestore_source.rb \
+            --source-kind "${SOURCE_KIND}" \
             --source source-update/sidestore-source.json \
             --metadata "${metadata}" \
             --ipa "public/${IPA_NAME}" \
@@ -871,6 +952,7 @@ jobs:
             --date "${release_date}" \
             --description "${description}"
           ruby tag-source/Scripts/validate_sidestore_source.rb \
+            --source-kind "${SOURCE_KIND}" \
             --source source-update/sidestore-source.json \
             --metadata "${metadata}" \
             --ipa "public/${IPA_NAME}" \
@@ -924,6 +1006,7 @@ jobs:
           test "${matched}" = true
 
           ruby tag-source/Scripts/validate_sidestore_source.rb \
+            --source-kind "${SOURCE_KIND}" \
             --source "${public_source}" \
             --metadata tag-source/platform/ios/release.json \
             --ipa "public/${IPA_NAME}" \
