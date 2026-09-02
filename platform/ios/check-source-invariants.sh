@@ -212,9 +212,15 @@ require_source "${SDL3_HEADER}" 'void SDL_SetEventEnabled(Uint32, bool);'
 require_source "${SDL3}" 'finger_action = touch_state:onCancel'
 require_source "${SDL3}" 'return true, {}'
 require_source "${SDL3}" 'if touch_state:resetContacts() then'
+require_source "${SDL3}" 'and TouchState.isOutsideSafeArea('
+require_source "${SDL3}" 'tonumber(event.tfinger.fingerID), ignore_finger)'
 require_source "${SDL3_TOUCH_STATE}" 'self:_startDiscarding()'
+require_source "${SDL3_TOUCH_STATE}" 'function TouchState.isOutsideSafeArea('
+require_source "${SDL3_TOUCH_STATE}" 'function TouchState:onDown(finger_id, ignore)'
+require_source "${SDL3_TOUCH_STATE}" 'if not self.active[finger_id] then'
 require_source "${SDL3_TOUCH_STATE}" 'return "cancel"'
 require_source "${SDL3_TOUCH_STATE}" 'return "consume"'
+reject_source "${SDL3_TOUCH_STATE}" 'self.discarded[finger_id] = true'
 require_source "${SDL3_INPUT}" 'setMultitouchSuppressed = SDL.setMultitouchSuppressed'
 require_source "${INPUT}" 'function Input:setMultitouchSuppressed(suppressed)'
 require_source "${DEVICE}" 'UIManager:broadcastEvent(Event:new("HandledAsSwipe"))'
@@ -245,6 +251,14 @@ require_source "${KOPT_INTERFACE}" 'local nightmode_invert = doc.configurable.ni
 require_source "${KOPT_INTERFACE}" 'Document.drawPageInverted(doc, target, x, y, rect, pageno, zoom, rotation, gamma, saturation)'
 reject_source "${KOPT_INTERFACE}" 'isIOSStandaloneImage'
 reject_source "${KOPT_INTERFACE}" 'ios_standalone_image'
+
+safe_area_filter_line="$(grep -nF 'and TouchState.isOutsideSafeArea(' "${SDL3}" | head -n1 | cut -d: -f1)"
+touch_down_line="$(grep -nF 'finger_action, finger_slot = touch_state:onDown(' "${SDL3}" | head -n1 | cut -d: -f1)"
+if [ -z "${safe_area_filter_line}" ] || [ -z "${touch_down_line}" ] \
+        || [ "${safe_area_filter_line}" -ge "${touch_down_line}" ]; then
+    echo "error: iOS safe-area contacts must be rejected before allocating a touch slot" >&2
+    exit 1
+fi
 
 reader_ready_line="$(grep -nF 'self:handleEvent(Event:new("ReaderReady"' "${READER_UI}" | head -n1 | cut -d: -f1)"
 reader_suppress_line="$(grep -nF 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)' "${READER_UI}" | head -n1 | cut -d: -f1)"

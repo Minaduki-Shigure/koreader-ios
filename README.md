@@ -40,6 +40,9 @@
 > TXT multitouch is deliberately cancelled at the SDL input boundary on iOS;
 > use the font-size controls instead of pinch resizing. Other document types
 > retain their normal multitouch gestures.
+> Touches that start in the non-rendered iOS safe-area bezel, including the
+> Home Indicator region, are reserved for system gestures and do not enter
+> KOReader. Start a bottom-menu swipe immediately above that region.
 > Reflowable documents offer an opt-in **Global reading style** under
 > **Document settings**. It synchronizes reviewed typography and margin values
 > while leaving progress, annotations, CSS, view mode, and PDF settings local.

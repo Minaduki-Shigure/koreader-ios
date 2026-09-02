@@ -341,6 +341,11 @@ upstream KOReader tag.
   drains a complete multitouch sequence before KOReader can dispatch a TXT
   font-size gesture. Use KOReader's font-size controls instead. Multitouch in
   other document types remains available.
+- **System safe-area gestures stay outside KOReader.** A touch that starts in
+  the non-rendered notch or Home Indicator inset is consumed at the SDL input
+  boundary. A touch that starts in the rendered canvas remains active if it
+  later moves into an inset, so ordinary edge drags and menu gestures that
+  begin above the system region retain their existing behavior.
 - **Global reading style is opt-in.** In a reflowable document, open the top
   menu, then **Settings -> Document settings -> Global reading style**. Enabling
   it copies the current font, typography, and margin values into a reviewed
