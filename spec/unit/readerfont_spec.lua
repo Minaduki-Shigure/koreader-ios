@@ -132,6 +132,26 @@ describe("ReaderFont gesture sizing", function()
         assert.are.equal(40, #scheduled)
     end)
 
+    it("blocks iOS plain-text pinch before it can start a full reflow", function()
+        local font, document = newReaderFont()
+        font.onChangeSize = spy.new(function() end)
+        document.is_txt = true
+
+        font:onIncreaseFontSize({
+            direction = "horizontal",
+            distance = Screen:getWidth(),
+        })
+        font:onDecreaseFontSize({
+            direction = "horizontal",
+            distance = Screen:getWidth(),
+        })
+
+        assert.spy(font.onChangeSize).was.called(0)
+        assert.spy(document.setFontSize).was.called(0)
+        assert.are.equal(0, #scheduled)
+        assert.stub(Notification.notify).was.called(2)
+    end)
+
     it("cancels a pending gesture change when the document closes", function()
         local font = newReaderFont()
         font.onChangeSize = spy.new(function() end)
@@ -150,8 +170,9 @@ describe("ReaderFont gesture sizing", function()
     end)
 
     it("keeps non-iOS and numeric font changes synchronous", function()
-        local font = newReaderFont()
+        local font, document = newReaderFont()
         font.onChangeSize = spy.new(function() end)
+        document.is_txt = true
 
         font:onIncreaseFontSize(2)
         assert.spy(font.onChangeSize).was_called_with(font, 2)

@@ -439,6 +439,17 @@ function ReaderFont:_deferGestureFontSize(delta)
     UIManager:scheduleIn(IOS_GESTURE_FONT_DELAY_S, self._apply_gesture_font_size_action)
 end
 
+function ReaderFont:_isUnsafeIOSPlainTextGesture(ges)
+    return type(ges) == "table" and Device:isIOS()
+        and self.ui and self.ui.document and self.ui.document.is_txt == true
+end
+
+function ReaderFont:_rejectUnsafeIOSPlainTextGesture(ges)
+    if not self:_isUnsafeIOSPlainTextGesture(ges) then return false end
+    Notification:notify(_("Pinch font resizing is unavailable for plain text on iOS."), nil, true)
+    return true
+end
+
 function ReaderFont:onCloseDocument()
     if self._apply_gesture_font_size_action then
         UIManager:unschedule(self._apply_gesture_font_size_action)
@@ -448,6 +459,7 @@ function ReaderFont:onCloseDocument()
 end
 
 function ReaderFont:onIncreaseFontSize(ges)
+    if self:_rejectUnsafeIOSPlainTextGesture(ges) then return true end
     local delta_int = self:gesToFontSize(ges)
     if delta_int == 0 then return true end
     Notification:notify(_("Increasing font size…"), nil, true)
@@ -460,6 +472,7 @@ function ReaderFont:onIncreaseFontSize(ges)
 end
 
 function ReaderFont:onDecreaseFontSize(ges)
+    if self:_rejectUnsafeIOSPlainTextGesture(ges) then return true end
     local delta_int = self:gesToFontSize(ges)
     if delta_int == 0 then return true end
     Notification:notify(_("Decreasing font size…"), nil, true)
