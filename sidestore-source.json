@@ -19,6 +19,14 @@
       "tintColor": "#00AFA7",
       "versions": [
         {
+          "version": "2026.7.11",
+          "date": "2026-09-03",
+          "localizedDescription": "KOReader 2026.7.11 严格离线 iOS 测试版：修正 2026.7.9 对卡死触发区的误判。TXT 正文底部应用手势区起手的单指横向动作现在会在 SDL 输入边界持续跟踪整段轨迹，并在进入横向翻页或自定义手势动作前取消和排空；纯上下滑动、正文其他区域的左右翻页以及 Home Indicator 系统切换保持可用。该保护仅在 TXT 正文拥有输入时启用，设置面板、图片查看器等上层界面不受影响。重排文档的“顶部状态栏”显示开关继续纳入全局阅读样式，并在启用全局样式后跨文档统一保存。继续包含夜间图片反转控制、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
+          "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.11-b12/KOReader-Strict-Offline-SideStore.ipa",
+          "size": 77874112,
+          "minOSVersion": "14.0"
+        },
+        {
           "version": "2026.7.10",
           "date": "2026-09-03",
           "localizedDescription": "KOReader 2026.7.10 严格离线 iOS 测试版：修正 2026.7.9 对卡死触发区的误判。TXT 阅读界面底部应用手势区起手的单指横向动作现在会在 SDL 输入边界达到方向阈值后被取消并排空，不再进入横向翻页或自定义手势动作；同一区域的上下滑动、正文其他区域的左右翻页以及 Home Indicator 系统切换保持可用。重排文档的“顶部状态栏”显示开关继续纳入全局阅读样式，并在启用全局样式后跨文档统一保存。继续包含夜间图片反转控制、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
@@ -83,11 +91,11 @@
           "minOSVersion": "14.0"
         }
       ],
-      "version": "2026.7.10",
+      "version": "2026.7.11",
       "versionDate": "2026-09-03",
-      "versionDescription": "KOReader 2026.7.10 严格离线 iOS 测试版：修正 2026.7.9 对卡死触发区的误判。TXT 阅读界面底部应用手势区起手的单指横向动作现在会在 SDL 输入边界达到方向阈值后被取消并排空，不再进入横向翻页或自定义手势动作；同一区域的上下滑动、正文其他区域的左右翻页以及 Home Indicator 系统切换保持可用。重排文档的“顶部状态栏”显示开关继续纳入全局阅读样式，并在启用全局样式后跨文档统一保存。继续包含夜间图片反转控制、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
-      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.10-b11/KOReader-Strict-Offline-SideStore.ipa",
-      "size": 77873832
+      "versionDescription": "KOReader 2026.7.11 严格离线 iOS 测试版：修正 2026.7.9 对卡死触发区的误判。TXT 正文底部应用手势区起手的单指横向动作现在会在 SDL 输入边界持续跟踪整段轨迹，并在进入横向翻页或自定义手势动作前取消和排空；纯上下滑动、正文其他区域的左右翻页以及 Home Indicator 系统切换保持可用。该保护仅在 TXT 正文拥有输入时启用，设置面板、图片查看器等上层界面不受影响。重排文档的“顶部状态栏”显示开关继续纳入全局阅读样式，并在启用全局样式后跨文档统一保存。继续包含夜间图片反转控制、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。",
+      "downloadURL": "https://github.com/Minaduki-Shigure/koreader-ios/releases/download/ios-test-v2026.7.11-b12/KOReader-Strict-Offline-SideStore.ipa",
+      "size": 77874112
     }
   ],
   "news": []
