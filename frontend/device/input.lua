@@ -322,6 +322,12 @@ function Input:setMultitouchSuppressed(suppressed)
     end
 end
 
+function Input:setBottomHorizontalSuppressed(suppressed)
+    if self.input.setBottomHorizontalSuppressed then
+        return self.input.setBottomHorizontalSuppressed(suppressed == true)
+    end
+end
+
 function Input:UIManagerReady(uimgr)
     UIManager = uimgr
 end

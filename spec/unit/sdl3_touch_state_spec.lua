@@ -152,6 +152,163 @@ describe("SDL3 touch sequence state", function()
         assert.same({ "forward", 0 }, { state:onUp(202) })
     end)
 
+    it("cancels and drains horizontal motion from the bottom reader edge", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 515, 905, 1000, 1000),
+        })
+        assert.equals("cancel", state:onMotion(101, 525, 905, 1000, 1000))
+        assert.is_true(state:isDiscarding())
+        assert.equals("consume", state:onMotion(101, 700, 920, 1000, 1000))
+        assert.equals("consume", state:onUp(101))
+        assert.is_false(state:isDiscarding())
+
+        assert.same({ "forward", 0 }, { state:onDown(202, false, 500, 500) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(202, 700, 510, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, { state:onUp(202) })
+    end)
+
+    it("preserves vertical motion from the bottom reader edge", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 510, 820, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 520, 700, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 800, 700, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, {
+            state:onUp(101, 900, 700, 1000, 1000),
+        })
+        assert.is_false(state:isDiscarding())
+    end)
+
+    it("does not classify jitter or diagonal motion as bottom horizontal", function()
+        local classify = TouchState.bottomHorizontalDecision
+
+        assert.equals("pending", classify(500, 900, 519, 900, 1000, 1000))
+        assert.equals("cancel", classify(500, 900, 520, 900, 1000, 1000))
+        assert.equals("cancel", classify(500, 900, 535, 900, 1000, 1000))
+        assert.equals("pending", classify(500, 900, 560, 940, 1000, 1000))
+        assert.equals("allow", classify(500, 900, 520, 840, 1000, 1000))
+        assert.equals("allow", classify(500, 874, 700, 874, 1000, 1000))
+        assert.equals("cancel", classify(500, 875, 700, 875, 1000, 1000))
+        assert.equals("pending", classify(1000, 1800, 1019, 1800, 2000, 2000))
+        assert.equals("cancel", classify(1000, 1800, 1020, 1800, 2000, 2000))
+    end)
+
+    it("keeps watching an ambiguous start that becomes horizontal", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 520, 915, 1000, 1000),
+        })
+        assert.equals("cancel", state:onMotion(101, 700, 930, 1000, 1000))
+        assert.equals("consume", state:onUp(101))
+    end)
+
+    it("cancels a slow horizontal drag before the frontend pan threshold", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 505, 900, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 510, 901, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 515, 901, 1000, 1000),
+        })
+        assert.equals("cancel", state:onMotion(101, 520, 901, 1000, 1000))
+        assert.equals("consume", state:onMotion(101, 525, 901, 1000, 1000))
+        assert.equals("consume", state:onUp(101))
+    end)
+
+    it("classifies a fast bottom flick from its terminal coordinates", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.equals("cancel", state:onUp(101, 700, 905, 1000, 1000))
+        assert.equals(0, state:getActiveCount())
+        assert.is_false(state:isDiscarding())
+
+        assert.same({ "forward", 0 }, { state:onDown(202, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(202, 515, 905, 1000, 1000),
+        })
+        assert.equals("cancel", state:onUp(202, 700, 905, 1000, 1000))
+        assert.equals(0, state:getActiveCount())
+        assert.is_false(state:isDiscarding())
+    end)
+
+    it("allows an unresolved diagonal sequence at release", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 560, 940, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, {
+            state:onUp(101, 620, 980, 1000, 1000),
+        })
+    end)
+
+    it("recovers after a bottom horizontal sequence has no terminal event", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        state:onDown(101, false, 500, 900)
+        assert.equals("cancel", state:onMotion(101, 700, 900, 1000, 1000))
+        assert.is_true(state:isDiscarding())
+
+        assert.same({ "forward", 0 }, { state:onDown(202, false, 500, 500) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(202, 700, 500, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, { state:onUp(202) })
+        assert.is_true(state:isDiscarding())
+        assert.equals("consume", state:onUp(101))
+        assert.is_false(state:isDiscarding())
+    end)
+
+    it("keeps bottom horizontal motion when suppression is disabled", function()
+        local state = TouchState:new()
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 700, 900, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, { state:onUp(101) })
+    end)
+
+    it("restores bottom horizontal motion after suppression is disabled", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+        state:setBottomHorizontalSuppressed(false)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 700, 900, 1000, 1000),
+        })
+        assert.same({ "forward", 0 }, { state:onUp(101) })
+    end)
+
     it("keeps a valid contact active while an ignored contact is canceled", function()
         local state = TouchState:new()
 

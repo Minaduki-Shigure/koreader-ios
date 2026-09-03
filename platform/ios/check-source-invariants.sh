@@ -238,19 +238,28 @@ require_source "${SDL3}" 'finger_action = touch_state:onCancel'
 require_source "${SDL3}" 'return true, {}'
 require_source "${SDL3}" 'if touch_state:resetContacts() then'
 require_source "${SDL3}" 'and TouchState.isOutsideSafeArea('
-require_source "${SDL3}" 'tonumber(event.tfinger.fingerID), ignore_finger)'
+require_source "${SDL3}" 'tonumber(event.tfinger.fingerID), ignore_finger, finger_x, finger_y)'
+require_source "${SDL3}" 'finger_action, finger_slot = touch_state:onUp('
+require_source "${SDL3}" 'tonumber(event.tfinger.fingerID), finger_x, finger_y, S.w, S.h)'
 require_source "${SDL3_TOUCH_STATE}" 'self:_startDiscarding()'
 require_source "${SDL3_TOUCH_STATE}" 'function TouchState.isOutsideSafeArea('
-require_source "${SDL3_TOUCH_STATE}" 'function TouchState:onDown(finger_id, ignore)'
+require_source "${SDL3_TOUCH_STATE}" 'function TouchState.bottomHorizontalDecision('
+require_source "${SDL3_TOUCH_STATE}" 'function TouchState:onDown(finger_id, ignore, x, y)'
+require_source "${SDL3_TOUCH_STATE}" 'function TouchState:onUp(finger_id, x, y, window_w, window_h)'
+require_source "${SDL3_TOUCH_STATE}" 'function TouchState:setBottomHorizontalSuppressed(suppressed)'
 require_source "${SDL3_TOUCH_STATE}" 'if not self.active[finger_id] then'
 require_source "${SDL3_TOUCH_STATE}" 'return "cancel"'
 require_source "${SDL3_TOUCH_STATE}" 'return "consume"'
 reject_source "${SDL3_TOUCH_STATE}" 'self.discarded[finger_id] = true'
 require_source "${SDL3_INPUT}" 'setMultitouchSuppressed = SDL.setMultitouchSuppressed'
+require_source "${SDL3_INPUT}" 'setBottomHorizontalSuppressed = SDL.setBottomHorizontalSuppressed'
+require_source "${INPUT}" 'function Input:setBottomHorizontalSuppressed(suppressed)'
 require_source "${INPUT}" 'function Input:setMultitouchSuppressed(suppressed)'
 require_source "${DEVICE}" 'UIManager:broadcastEvent(Event:new("HandledAsSwipe"))'
 require_source "${DEVICE}" 'device_input:resetState()'
 require_source "${READER_UI}" 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)'
+require_source "${READER_UI}" 'Input:setBottomHorizontalSuppressed(Device:isIOS() and self.document.is_txt == true)'
+require_source "${READER_UI}" 'Input:setBottomHorizontalSuppressed(false)'
 require_source "${READER_UI}" 'Input:setMultitouchSuppressed(false)'
 require_source "${READER_UI}" 'file_type == "txt" or file_type == "txt.zip"'
 reject_source "${READER_FONT}" 'if size == self.configurable.font_size then return true end'
@@ -307,12 +316,15 @@ if [ -z "${lifecycle_init_line}" ] || [ -z "${lifecycle_start_line}" ] \
 fi
 
 reader_ready_line="$(grep -nF 'self:handleEvent(Event:new("ReaderReady"' "${READER_UI}" | head -n1 | cut -d: -f1)"
+reader_bottom_suppress_line="$(grep -nF 'Input:setBottomHorizontalSuppressed(Device:isIOS() and self.document.is_txt == true)' "${READER_UI}" | head -n1 | cut -d: -f1)"
 reader_suppress_line="$(grep -nF 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)' "${READER_UI}" | head -n1 | cut -d: -f1)"
 reader_restore_line="$(grep -nF 'Device:setIgnoreInput(false) -- Allow processing of events (on Android).' "${READER_UI}" | head -n1 | cut -d: -f1)"
-if [ -z "${reader_ready_line}" ] || [ -z "${reader_suppress_line}" ] || [ -z "${reader_restore_line}" ] \
-        || [ "${reader_ready_line}" -ge "${reader_suppress_line}" ] \
+if [ -z "${reader_ready_line}" ] || [ -z "${reader_bottom_suppress_line}" ] \
+        || [ -z "${reader_suppress_line}" ] || [ -z "${reader_restore_line}" ] \
+        || [ "${reader_ready_line}" -ge "${reader_bottom_suppress_line}" ] \
+        || [ "${reader_bottom_suppress_line}" -ge "${reader_suppress_line}" ] \
         || [ "${reader_suppress_line}" -ge "${reader_restore_line}" ]; then
-    echo "error: TXT multitouch suppression must only be enabled after ReaderReady and before input is restored" >&2
+    echo "error: iOS TXT gesture suppression must be enabled after ReaderReady and before input is restored" >&2
     exit 1
 fi
 require_source "${APPEARANCE_PLUGIN}" 'KO_HARDENED_OFFLINE'

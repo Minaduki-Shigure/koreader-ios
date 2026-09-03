@@ -535,6 +535,7 @@ function ReaderUI:init()
 
     BookList.setBookInfoCache(file, self.doc_settings)
 
+    Input:setBottomHorizontalSuppressed(Device:isIOS() and self.document.is_txt == true)
     Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)
     Device:setIgnoreInput(false) -- Allow processing of events (on Android).
     Input:inhibitInputUntil(0.2)
@@ -742,6 +743,7 @@ function ReaderUI:showReaderCoroutine(file, provider, seamless)
             io.stderr:write('[!] doShowReader coroutine crashed:\n')
             io.stderr:write(debug.traceback(co, err, 1))
             -- Restore input if we crashed before ReaderUI has restored it
+            Input:setBottomHorizontalSuppressed(false)
             Input:setMultitouchSuppressed(false)
             Device:setIgnoreInput(false)
             Input:inhibitInputUntil(0.2)
@@ -874,6 +876,7 @@ function ReaderUI:onFlushSettings(show_notification)
 end
 
 function ReaderUI:closeDocument()
+    Input:setBottomHorizontalSuppressed(false)
     Input:setMultitouchSuppressed(false)
     self.document:close()
     self.document = nil

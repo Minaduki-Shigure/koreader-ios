@@ -1,8 +1,8 @@
 {
-  "marketingVersion": "2026.7.9",
-  "buildVersion": "10",
-  "releaseTag": "ios-v2026.7.9-b10",
+  "marketingVersion": "2026.7.10",
+  "buildVersion": "11",
+  "releaseTag": "ios-v2026.7.10-b11",
   "upstreamTag": "v2026.07.1",
   "channel": "beta",
-  "localizedDescription": "KOReader 2026.7.9 严格离线 iOS 测试版：针对从屏幕最下方左右滑动导致应用卡死的问题，取消全屏 SDL 对 iOS 系统边缘手势的延迟，让主屏指示条横向切换从第一次触摸起即由系统接管；新增 SDL 生命周期观察桥，在应用切换或取消切换时清理残留触点，并在返回前台后完整重绘。重排文档的“顶部状态栏”显示开关现已纳入全局阅读样式；升级时会从首个打开文档继承一次，之后跨文档统一保存。继续包含夜间图片反转控制、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。"
+  "localizedDescription": "KOReader 2026.7.10 严格离线 iOS 测试版：修正 2026.7.9 对卡死触发区的误判。TXT 阅读界面底部应用手势区起手的单指横向动作现在会在 SDL 输入边界达到方向阈值后被取消并排空，不再进入横向翻页或自定义手势动作；同一区域的上下滑动、正文其他区域的左右翻页以及 Home Indicator 系统切换保持可用。重排文档的“顶部状态栏”显示开关继续纳入全局阅读样式，并在启用全局样式后跨文档统一保存。继续包含夜间图片反转控制、中文 CJK 字宽设置、TXT 多触控隔离、夜间模式切换与多文件导入。LiveContainer 使用前仍需启用 Fix File Picker。"
 }

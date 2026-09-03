@@ -341,14 +341,20 @@ upstream KOReader tag.
   drains a complete multitouch sequence before KOReader can dispatch a TXT
   font-size gesture. Use KOReader's font-size controls instead. Multitouch in
   other document types remains available.
+- **TXT bottom-edge horizontal gestures are disabled on iOS.** A one-finger
+  sequence that starts in the bottom one-eighth of the rendered page is
+  cancelled and drained once its accumulated motion is clearly horizontal.
+  This keeps that application gesture strip away from the unstable TXT page
+  turn/custom-action path. Vertical scrolling and the upward bottom-menu
+  gesture remain available there; horizontal page turns still work elsewhere.
 - **System safe-area gestures stay outside KOReader.** The fullscreen SDL
   controller does not defer Home Indicator gestures, so horizontal app
   switching belongs to iOS from the first contact. A touch that starts in the
   non-rendered notch or Home Indicator inset is consumed at the SDL input
   boundary. SDL's watcher-only lifecycle events are bridged into the regular
   input queue, where every foreground/background boundary cancels incomplete
-  contacts before rendering resumes. Ordinary edge drags and menu gestures
-  that begin above the system region retain their existing behavior.
+  contacts before rendering resumes. This is separate from the TXT application
+  gesture-strip guard described above.
 - **Global reading style is opt-in.** In a reflowable document, open the top
   menu, then **Settings -> Document settings -> Global reading style**. Enabling
   it copies the current font, typography, margin, and alternative top status
