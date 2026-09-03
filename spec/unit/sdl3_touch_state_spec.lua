@@ -185,11 +185,31 @@ describe("SDL3 touch sequence state", function()
             state:onMotion(101, 520, 700, 1000, 1000),
         })
         assert.same({ "forward", 0 }, {
-            state:onMotion(101, 800, 700, 1000, 1000),
+            state:onMotion(101, 540, 600, 1000, 1000),
         })
         assert.same({ "forward", 0 }, {
-            state:onUp(101, 900, 700, 1000, 1000),
+            state:onUp(101, 550, 500, 1000, 1000),
         })
+        assert.is_false(state:isDiscarding())
+    end)
+
+    it("cancels a bottom gesture that turns from vertical to horizontal", function()
+        local state = TouchState:new()
+        state:setBottomHorizontalSuppressed(true)
+
+        assert.same({ "forward", 0 }, { state:onDown(101, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(101, 505, 850, 1000, 1000),
+        })
+        assert.equals("cancel", state:onMotion(101, 800, 850, 1000, 1000))
+        assert.equals("consume", state:onUp(101))
+
+        assert.same({ "forward", 0 }, { state:onDown(202, false, 500, 900) })
+        assert.same({ "forward", 0 }, {
+            state:onMotion(202, 505, 850, 1000, 1000),
+        })
+        assert.equals("cancel", state:onUp(202, 800, 850, 1000, 1000))
+        assert.equals(0, state:getActiveCount())
         assert.is_false(state:isDiscarding())
     end)
 

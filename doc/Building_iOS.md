@@ -347,6 +347,9 @@ upstream KOReader tag.
   This keeps that application gesture strip away from the unstable TXT page
   turn/custom-action path. Vertical scrolling and the upward bottom-menu
   gesture remain available there; horizontal page turns still work elsewhere.
+  The policy follows the topmost non-toast widget: it is suspended while a
+  dialog, menu, image viewer, or other overlay owns input, and resumes when the
+  TXT reader is topmost again.
 - **System safe-area gestures stay outside KOReader.** The fullscreen SDL
   controller does not defer Home Indicator gestures, so horizontal app
   switching belongs to iOS from the first contact. A touch that starts in the

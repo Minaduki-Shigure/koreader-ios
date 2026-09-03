@@ -322,10 +322,33 @@ function Input:setMultitouchSuppressed(suppressed)
     end
 end
 
-function Input:setBottomHorizontalSuppressed(suppressed)
-    if self.input.setBottomHorizontalSuppressed then
-        return self.input.setBottomHorizontalSuppressed(suppressed == true)
+function Input:_syncBottomHorizontalSuppression()
+    if not self.input.setBottomHorizontalSuppressed then return end
+
+    local suppressed = self._bottom_horizontal_suppression_requested == true
+    local owner = self._bottom_horizontal_suppression_owner
+    if suppressed and owner and UIManager and UIManager.topdown_widgets_iter then
+        suppressed = false
+        for widget in UIManager:topdown_widgets_iter() do
+            -- Toasts receive input but never stop it reaching the reader below.
+            if not widget.toast then
+                suppressed = widget == owner
+                break
+            end
+        end
     end
+
+    if self._bottom_horizontal_suppression_applied ~= suppressed then
+        self._bottom_horizontal_suppression_applied = suppressed
+        return self.input.setBottomHorizontalSuppressed(suppressed)
+    end
+end
+
+function Input:setBottomHorizontalSuppressed(suppressed, owner)
+    local requested = suppressed == true
+    self._bottom_horizontal_suppression_requested = requested
+    self._bottom_horizontal_suppression_owner = requested and owner or nil
+    return self:_syncBottomHorizontalSuppression()
 end
 
 function Input:UIManagerReady(uimgr)
@@ -1480,6 +1503,10 @@ end
 function Input:waitEvent(now, deadline)
     -- On the first iteration of the loop, we don't need to update now, we're following closely (a couple ms at most) behind UIManager.
     local ok, ev
+    local function waitForEvent(sec, usec)
+        self:_syncBottomHorizontalSuppression()
+        return self.input.waitForEvent(sec, usec)
+    end
     -- Wrapper around the platform-specific input.waitForEvent (which itself is generally poll-like, and supposed to poll *once*).
     -- Speaking of input.waitForEvent, it can return:
     -- * true, ev: When a batch of input events was read.
@@ -1538,7 +1565,7 @@ function Input:waitEvent(now, deadline)
 
                 local timerfd
                 local sec, usec = time.split_s_us(poll_timeout)
-                ok, ev, timerfd = self.input.waitForEvent(sec, usec)
+                ok, ev, timerfd = waitForEvent(sec, usec)
                 -- We got an actual input event, go and process it
                 if ok then break end
 
@@ -1625,7 +1652,7 @@ function Input:waitEvent(now, deadline)
             end
 
             local sec, usec = time.split_s_us(poll_timeout)
-            ok, ev = self.input.waitForEvent(sec, usec)
+            ok, ev = waitForEvent(sec, usec)
         end -- if #timer_callbacks > 0
 
         -- Handle errors

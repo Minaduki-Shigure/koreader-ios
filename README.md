@@ -44,6 +44,8 @@
 > rendered page is also cancelled before horizontal page-turn or custom-action
 > dispatch. Use the rest of the page for horizontal page turns; vertical
 > scrolling and the upward bottom-menu gesture remain available in that strip.
+> The guard is active only while the reader owns input, so dialogs and image
+> viewers retain their normal horizontal controls.
 > Fullscreen iOS builds do not defer Home Indicator gestures: horizontal app
 > switching belongs to the system from the first contact. Touches that start
 > in the non-rendered safe-area bezel remain outside KOReader, and lifecycle

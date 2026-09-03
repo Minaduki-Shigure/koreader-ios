@@ -247,18 +247,22 @@ require_source "${SDL3_TOUCH_STATE}" 'function TouchState.bottomHorizontalDecisi
 require_source "${SDL3_TOUCH_STATE}" 'function TouchState:onDown(finger_id, ignore, x, y)'
 require_source "${SDL3_TOUCH_STATE}" 'function TouchState:onUp(finger_id, x, y, window_w, window_h)'
 require_source "${SDL3_TOUCH_STATE}" 'function TouchState:setBottomHorizontalSuppressed(suppressed)'
+reject_source "${SDL3_TOUCH_STATE}" 'bottom_direction_resolved'
 require_source "${SDL3_TOUCH_STATE}" 'if not self.active[finger_id] then'
 require_source "${SDL3_TOUCH_STATE}" 'return "cancel"'
 require_source "${SDL3_TOUCH_STATE}" 'return "consume"'
 reject_source "${SDL3_TOUCH_STATE}" 'self.discarded[finger_id] = true'
 require_source "${SDL3_INPUT}" 'setMultitouchSuppressed = SDL.setMultitouchSuppressed'
 require_source "${SDL3_INPUT}" 'setBottomHorizontalSuppressed = SDL.setBottomHorizontalSuppressed'
-require_source "${INPUT}" 'function Input:setBottomHorizontalSuppressed(suppressed)'
+require_source "${INPUT}" 'function Input:setBottomHorizontalSuppressed(suppressed, owner)'
+require_source "${INPUT}" 'function Input:_syncBottomHorizontalSuppression()'
+require_source "${INPUT}" 'self:_syncBottomHorizontalSuppression()'
 require_source "${INPUT}" 'function Input:setMultitouchSuppressed(suppressed)'
 require_source "${DEVICE}" 'UIManager:broadcastEvent(Event:new("HandledAsSwipe"))'
 require_source "${DEVICE}" 'device_input:resetState()'
 require_source "${READER_UI}" 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)'
-require_source "${READER_UI}" 'Input:setBottomHorizontalSuppressed(Device:isIOS() and self.document.is_txt == true)'
+require_source "${READER_UI}" 'Input:setBottomHorizontalSuppressed('
+require_source "${READER_UI}" 'Device:isIOS() and self.document.is_txt == true, self)'
 require_source "${READER_UI}" 'Input:setBottomHorizontalSuppressed(false)'
 require_source "${READER_UI}" 'Input:setMultitouchSuppressed(false)'
 require_source "${READER_UI}" 'file_type == "txt" or file_type == "txt.zip"'
@@ -316,7 +320,7 @@ if [ -z "${lifecycle_init_line}" ] || [ -z "${lifecycle_start_line}" ] \
 fi
 
 reader_ready_line="$(grep -nF 'self:handleEvent(Event:new("ReaderReady"' "${READER_UI}" | head -n1 | cut -d: -f1)"
-reader_bottom_suppress_line="$(grep -nF 'Input:setBottomHorizontalSuppressed(Device:isIOS() and self.document.is_txt == true)' "${READER_UI}" | head -n1 | cut -d: -f1)"
+reader_bottom_suppress_line="$(grep -nF 'Input:setBottomHorizontalSuppressed(' "${READER_UI}" | head -n1 | cut -d: -f1)"
 reader_suppress_line="$(grep -nF 'Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)' "${READER_UI}" | head -n1 | cut -d: -f1)"
 reader_restore_line="$(grep -nF 'Device:setIgnoreInput(false) -- Allow processing of events (on Android).' "${READER_UI}" | head -n1 | cut -d: -f1)"
 if [ -z "${reader_ready_line}" ] || [ -z "${reader_bottom_suppress_line}" ] \

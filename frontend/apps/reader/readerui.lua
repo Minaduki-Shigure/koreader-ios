@@ -535,7 +535,8 @@ function ReaderUI:init()
 
     BookList.setBookInfoCache(file, self.doc_settings)
 
-    Input:setBottomHorizontalSuppressed(Device:isIOS() and self.document.is_txt == true)
+    Input:setBottomHorizontalSuppressed(
+        Device:isIOS() and self.document.is_txt == true, self)
     Input:setMultitouchSuppressed(Device:isIOS() and self.document.is_txt == true)
     Device:setIgnoreInput(false) -- Allow processing of events (on Android).
     Input:inhibitInputUntil(0.2)
